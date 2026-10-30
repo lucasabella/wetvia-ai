@@ -1,1 +1,1 @@
-Placeholder voor shadcn-svelte / ui-primitieven. Nog geen componenten.
+shadcn-svelte staat in `src/lib/ui/`. Deze map is een oude placeholder.

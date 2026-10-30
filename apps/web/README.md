@@ -1,11 +1,11 @@
 # apps/web
 
-SvelteKit-frontend van Wetvia. In dit skelet staat alleen het pnpm-pakket `@wetvia/web`, met eslint, TypeScript en vitest.
+SvelteKit 2-frontend van Wetvia (Svelte 5, TypeScript, Tailwind 4, shadcn-svelte).
 
-Nog niet aanwezig (later issue): SvelteKit, Tailwind, shadcn-svelte, de layout en het logo.
-De mappen onder `src/lib/components`, `src/lib/stores`, `src/lib/api` en `src/routes` zijn leeg op een README na.
+Features staan in `src/lib/features/<feature>/` (component, store, test). shadcn-componenten staan in `src/lib/ui/`. Het logo is `static/logo.svg`.
 
 ```bash
+pnpm dev
 pnpm lint
 pnpm check
 pnpm test

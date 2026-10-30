@@ -1,0 +1,168 @@
+@import "@fontsource-variable/inter/wght.css";
+@import "@fontsource-variable/source-serif-4/wght.css";
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn-svelte/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Kleuren uit docs/03 §Visuele identiteit.
+  Gedempte vlakken zijn een menging van de gedocumenteerde inkt- en achtergrondkleur.
+*/
+:root {
+  --background: #fafaf7;
+  --foreground: #1b1f24;
+  --card: #fafaf7;
+  --card-foreground: #1b1f24;
+  --primary: #1f4e79;
+  --primary-foreground: #fafaf7;
+  --accent: #e8eff6;
+  --accent-foreground: #1f4e79;
+  --secondary: #e8eff6;
+  --secondary-foreground: #1b1f24;
+  --muted: color-mix(in srgb, #1b1f24 6%, #fafaf7);
+  --muted-foreground: color-mix(in srgb, #1b1f24 70%, #fafaf7);
+  --border: color-mix(in srgb, #1b1f24 16%, #fafaf7);
+  --input: color-mix(in srgb, #1b1f24 16%, #fafaf7);
+  --ring: #1f4e79;
+  --destructive: #b45309;
+  --destructive-foreground: #1b1f24;
+  --wetvia-geldend: #2e7d4f;
+  --wetvia-toekomstig: #2563eb;
+  --wetvia-vervallen: #6b7280;
+  --wetvia-voorstel: #7c3aed;
+  --wetvia-warning: #b45309;
+  --wetvia-warning-bg: #fef3c7;
+  --radius: 0.5rem;
+  --popover: #fafaf7;
+  --popover-foreground: #1b1f24;
+  --chart-1: #1f4e79;
+  --chart-2: #2e7d4f;
+  --chart-3: #2563eb;
+  --chart-4: #7c3aed;
+  --chart-5: #6b7280;
+  --sidebar: #fafaf7;
+  --sidebar-foreground: #1b1f24;
+  --sidebar-primary: #1f4e79;
+  --sidebar-primary-foreground: #fafaf7;
+  --sidebar-accent: #e8eff6;
+  --sidebar-accent-foreground: #1f4e79;
+  --sidebar-border: color-mix(in srgb, #1b1f24 16%, #fafaf7);
+  --sidebar-ring: #1f4e79;
+}
+
+.dark {
+  --background: #111418;
+  --foreground: #e6e8eb;
+  --card: color-mix(in srgb, #e6e8eb 6%, #111418);
+  --card-foreground: #e6e8eb;
+  --primary: #7fb0e0;
+  --primary-foreground: #111418;
+  --accent: color-mix(in srgb, #7fb0e0 16%, #111418);
+  --accent-foreground: #e6e8eb;
+  --secondary: color-mix(in srgb, #e6e8eb 8%, #111418);
+  --secondary-foreground: #e6e8eb;
+  --muted: color-mix(in srgb, #e6e8eb 8%, #111418);
+  --muted-foreground: color-mix(in srgb, #e6e8eb 72%, #111418);
+  --border: color-mix(in srgb, #e6e8eb 16%, #111418);
+  --input: color-mix(in srgb, #e6e8eb 16%, #111418);
+  --ring: #7fb0e0;
+  --destructive: #b45309;
+  --destructive-foreground: #fef3c7;
+  --popover: color-mix(in srgb, #e6e8eb 8%, #111418);
+  --popover-foreground: #e6e8eb;
+  --chart-1: #7fb0e0;
+  --chart-2: #2e7d4f;
+  --chart-3: #2563eb;
+  --chart-4: #7c3aed;
+  --chart-5: #6b7280;
+  --sidebar: #111418;
+  --sidebar-foreground: #e6e8eb;
+  --sidebar-primary: #7fb0e0;
+  --sidebar-primary-foreground: #111418;
+  --sidebar-accent: color-mix(in srgb, #7fb0e0 16%, #111418);
+  --sidebar-accent-foreground: #e6e8eb;
+  --sidebar-border: color-mix(in srgb, #e6e8eb 16%, #111418);
+  --sidebar-ring: #7fb0e0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-wetvia-geldend: var(--wetvia-geldend);
+  --color-wetvia-toekomstig: var(--wetvia-toekomstig);
+  --color-wetvia-vervallen: var(--wetvia-vervallen);
+  --color-wetvia-voorstel: var(--wetvia-voorstel);
+  --color-wetvia-warning: var(--wetvia-warning);
+  --color-wetvia-warning-bg: var(--wetvia-warning-bg);
+  --font-sans: "Inter Variable", sans-serif;
+  --font-serif: "Source Serif 4 Variable", ui-serif, serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  html {
+    @apply font-sans;
+  }
+}

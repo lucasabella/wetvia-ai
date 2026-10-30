@@ -1,1 +1,1 @@
-Placeholder voor chat-componenten. Nog geen UI.
+Chat hoort in `src/lib/features/chat/`. Deze map is een oude placeholder.
