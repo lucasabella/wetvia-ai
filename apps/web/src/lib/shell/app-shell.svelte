@@ -27,7 +27,6 @@
       variant="outline"
       size="icon"
       aria-expanded={historyOpen}
-      aria-controls="geschiedenis-sheet"
       onclick={() => (historyOpen = true)}
     >
       <MenuIcon />
@@ -41,7 +40,6 @@
       variant="outline"
       class="ml-auto"
       aria-expanded={sourcesOpen}
-      aria-controls="bronnen-sheet"
       onclick={() => (sourcesOpen = true)}
     >
       <LibraryIcon />

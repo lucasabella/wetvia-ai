@@ -13,7 +13,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@eslint/js": "latest",
+    "@eslint/js": "^10.0.1",
     "@internationalized/date": "^3.12.4",
     "@sveltejs/adapter-auto": "^7.0.1",
     "@sveltejs/kit": "^2.70.3",
