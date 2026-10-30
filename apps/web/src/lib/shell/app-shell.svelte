@@ -5,11 +5,23 @@
   import ChatPanel from "$lib/features/chat/chat-panel.svelte";
   import SourcesPanel from "$lib/features/sources/sources-panel.svelte";
   import LeftColumn from "$lib/shell/left-column.svelte";
+  import { DESKTOP_MEDIA_QUERY, sheetStaysOpen } from "$lib/shell/sheets";
   import { Button } from "$lib/ui/button/index.js";
   import * as Sheet from "$lib/ui/sheet/index.js";
 
   let historyOpen = $state(false);
   let sourcesOpen = $state(false);
+
+  $effect(() => {
+    const media = window.matchMedia(DESKTOP_MEDIA_QUERY);
+    const closeOnDesktop = () => {
+      historyOpen = sheetStaysOpen(historyOpen, media.matches);
+      sourcesOpen = sheetStaysOpen(sourcesOpen, media.matches);
+    };
+    closeOnDesktop();
+    media.addEventListener("change", closeOnDesktop);
+    return () => media.removeEventListener("change", closeOnDesktop);
+  });
 </script>
 
 <div class="flex min-h-dvh flex-col bg-background text-foreground">
