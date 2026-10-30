@@ -1,0 +1,59 @@
+name: Agent-taak
+description: Taak met context, acceptatiecriteria, technische notities en docs, zodat een agent hem kan oppakken.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vul Context, Acceptatiecriteria, Technische notities en Docs in.
+        Een maintainer zet het label `agent-ready` pas als het issue compleet is (zie CONTRIBUTING.md).
+        Verzin geen wetgeving of bronnen. Secrets horen niet in het issue.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Waarom deze taak bestaat en welk deel van Wetvia hij raakt.
+      placeholder: Welk onderdeel, en waarom nu?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptatiecriteria
+    attributes:
+      label: Acceptatiecriteria
+      description: Toetsbare voorwaarden. Eén criterium per regel, als checklist. Dit is de scope.
+      placeholder: |
+        - [ ] …
+        - [ ] …
+    validations:
+      required: true
+
+  - type: textarea
+    id: technische-notities
+    attributes:
+      label: Technische notities
+      description: Aanpak, paden, env-vars en bekende valkuilen. Geen verzonnen wetsartikelen.
+      placeholder: Bibliotheken, paden, env-vars, wat expres niet mag.
+    validations:
+      required: true
+
+  - type: textarea
+    id: docs
+    attributes:
+      label: Docs
+      description: Welke documenten de agent moet volgen.
+      placeholder: |
+        - docs/04-tech-stack.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: niet-doen
+    attributes:
+      label: Niet doen
+      description: Harde grenzen. Laat staan als de standaardtekst klopt.
+      value: |
+        - Geen secrets committen; alleen `.env.example` met placeholders.
+        - Geen scope buiten deze acceptatiecriteria.
+    validations:
+      required: false
