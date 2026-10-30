@@ -87,7 +87,7 @@ cp .env.example .env            # vul alleen de waarden in die je nodig hebt
 docker compose up -d db
 cd apps/api && uv sync && uv run alembic upgrade head
 uv run wetvia ingest bwb --preset mvp      # CLI in src/wetvia/cli.py; logica in wetvia.ingest
-uv run fastapi dev src/wetvia/api/app.py   # app-factory; composition root is bootstrap.py
+uv run fastapi dev src/wetvia/bootstrap.py  # ASGI app; factory staat in api/app.py
 cd ../web && pnpm i && pnpm dev
 # worker, later: hetzelfde image, profiel ingest, commando `wetvia ingest sync && wetvia embed`
 ```
