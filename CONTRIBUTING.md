@@ -48,9 +48,11 @@ Gebruik deze checklist in de PR-beschrijving:
 uv sync --all-packages --all-groups
 pnpm install
 
-cd apps/api && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
+cd apps/api && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest && uv run lint-imports
 cd ../../packages/nl-wetten-ingest && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
 cd ../.. && pnpm lint && pnpm check && pnpm test && pnpm format:check
 ```
 
-`pnpm test` draait vitest in `apps/web`. Python-tests zijn pytest in de twee workspace-members.
+`uv run lint-imports` hoort bij de api-checks. Er is nog geen CI-workflow; de stap voor issue #7 staat in [`.github/workflows/README.md`](.github/workflows/README.md).
+
+`pnpm test` draait vitest in `apps/web`. Python-tests zijn pytest in de twee workspace-members. `training/` zit niet in de uv-workspace.

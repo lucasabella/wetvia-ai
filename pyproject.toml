@@ -1,11 +1,14 @@
 # Virtual uv-workspace. The root is not a package.
-# apps/api is AGPL-3.0-only. packages/nl-wetten-ingest is Apache-2.0.
+# Members: apps/api (AGPL-3.0-only) and packages/nl-wetten-ingest (Apache-2.0).
+# training/ is not a member. Torch and Unsloth clash with the API dependencies,
+# and a workspace shares one lockfile. See the README.
 
 [tool.uv.workspace]
 members = ["apps/api", "packages/nl-wetten-ingest"]
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.15",
     "mypy>=1.13",
     "pytest>=8.3",
     "ruff>=0.8",

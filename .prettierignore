@@ -1,9 +1,10 @@
-# Projectplan and README stay as merged from main; do not reflow them.
+# Projectplan en README niet herbreken; die tekst is met de hand gezet.
 docs/
 README.md
 
 .venv/
 node_modules/
+.import_linter_cache/
 .svelte-kit/
 build/
 .output/

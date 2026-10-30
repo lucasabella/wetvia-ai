@@ -94,6 +94,7 @@ uv run ruff check
 uv run ruff format --check
 uv run mypy src
 uv run pytest
+uv run lint-imports
 
 cd ../../packages/nl-wetten-ingest
 uv run ruff check
@@ -109,3 +110,7 @@ pnpm format:check
 ```
 
 Het label `agent-ready`, de PR-checklist en dezelfde commando's staan in [CONTRIBUTING.md](CONTRIBUTING.md). Kopieer [`.env.example`](.env.example) naar `.env` als je lokale waarden nodig hebt. Commit nooit `.env`.
+
+## training
+
+`training/` valt buiten de uv-workspace. Torch en Unsloth botsen met de dependencies van de API, en een workspace deelt één lockfile. Fine-tuning krijgt later een eigen pyproject en venv. De leden zijn alleen `apps/api` en `packages/nl-wetten-ingest`.

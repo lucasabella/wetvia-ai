@@ -15,14 +15,21 @@ def test_package_imports() -> None:
 
 def test_subpackages_import() -> None:
     for name in (
-        "wetvia.llm",
-        "wetvia.llm.prompts",
-        "wetvia.retrieval",
-        "wetvia.rules",
+        "wetvia.bootstrap",
+        "wetvia.cli",
+        "wetvia.api",
         "wetvia.answer",
         "wetvia.dossier",
+        "wetvia.documents",
+        "wetvia.retrieval",
+        "wetvia.ingest",
+        "wetvia.citations",
+        "wetvia.rules",
+        "wetvia.llm",
+        "wetvia.llm.prompts",
+        "wetvia.embeddings",
         "wetvia.db",
-        "wetvia.api",
+        "wetvia.core",
     ):
         importlib.import_module(name)
 

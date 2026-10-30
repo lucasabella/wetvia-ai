@@ -10,6 +10,7 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.15",
     "mypy>=1.13",
     "pytest>=8.3",
     "ruff>=0.8",
@@ -23,19 +24,29 @@ build-backend = "uv_build"
 module-name = "wetvia"
 
 [tool.ruff]
-target-version = "py312"
-line-length = 100
-src = ["src", "tests"]
-extend-exclude = [".venv", "node_modules"]
+extend = "../../pyproject.toml"
 
-[tool.ruff.lint]
-select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+[tool.importlinter]
+root_package = "wetvia"
+include_external_packages = true
 
-[tool.ruff.lint.isort]
-known-first-party = ["wetvia"]
+[[tool.importlinter.contracts]]
+name = "Lagen"
+type = "layers"
+layers = [
+    "wetvia.bootstrap",
+    "wetvia.api | wetvia.cli",
+    "wetvia.answer | wetvia.dossier | wetvia.documents",
+    "wetvia.retrieval | wetvia.ingest | wetvia.citations | wetvia.rules | wetvia.llm",
+    "wetvia.embeddings | wetvia.db",
+    "wetvia.core",
+]
 
-[tool.ruff.format]
-quote-style = "double"
+[[tool.importlinter.contracts]]
+name = "Domeinkern zonder I/O"
+type = "forbidden"
+source_modules = ["wetvia.rules", "wetvia.citations", "wetvia.core"]
+forbidden_modules = ["sqlalchemy", "httpx", "openai", "fastapi", "sentence_transformers"]
 
 [tool.mypy]
 python_version = "3.12"
