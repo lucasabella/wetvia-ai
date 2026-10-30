@@ -1,7 +1,8 @@
-Documentatie van Wetvia AI — Creative Commons Attribution 4.0 International
+Documentatie en evaluatieset van Wetvia AI — Creative Commons Attribution 4.0 International
 
-De bestanden in deze map (`docs/`) zijn gelicentieerd onder de
-Creative Commons Naamsvermelding 4.0 Internationaal-licentie (CC BY 4.0).
+De bestanden in `docs/` en de evaluatieset in `eval/data/` (zodra die
+wordt gepubliceerd) zijn gelicentieerd onder de Creative Commons
+Naamsvermelding 4.0 Internationaal-licentie (CC BY 4.0).
 
 https://creativecommons.org/licenses/by/4.0/legalcode
 
@@ -17,7 +18,4 @@ Naamsvermelding: Wetvia AI-documentatie, Luca Sabella
 
 De broncode van dit project valt niet onder deze licentie. Die is
 gelicentieerd onder de GNU Affero General Public License v3.0
-(AGPL-3.0); zie ../LICENSE.
-
-De evaluatieset is, zodra die wordt gepubliceerd, eveneens CC BY 4.0
-(zie de licentiesectie in de README).
+(AGPL-3.0); zie LICENSE.

@@ -21,6 +21,6 @@ venv/
 *.pem
 *.key
 
-# Model weights and local data
+# Model weights and local data (root only; eval/data/ stays tracked)
 *.gguf
-data/
+/data/

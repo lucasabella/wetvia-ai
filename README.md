@@ -37,7 +37,7 @@ Zie [docs/05-mvp-ontwikkelplan.md](docs/05-mvp-ontwikkelplan.md) voor de afbaken
 | 04 | [Tech stack](docs/04-tech-stack.md) | SvelteKit, FastAPI, Postgres+pgvector, serving, security, repo-structuur |
 | 05 | [MVP-ontwikkelplan](docs/05-mvp-ontwikkelplan.md) | Planning per week, latere fases, risico's, budget |
 
-De issues voor de MVP staan in [`issues.json`](issues.json), met [`labels.json`](labels.json) en [`milestones.json`](milestones.json). Ze zijn zo geschreven dat een coding agent (bijv. een Cursor cloud agent) ze zelfstandig kan oppakken.
+De issues voor de MVP staan op GitHub, met labels en milestones: [issues](https://github.com/lucasabella/wetvia-ai/issues) en [milestones](https://github.com/lucasabella/wetvia-ai/milestones). Ze zijn zo geschreven dat een coding agent (bijv. een Cursor cloud agent) ze zelfstandig kan oppakken.
 
 ## Architectuur in één oogopslag
 
@@ -57,13 +57,15 @@ Wetvia AI is **geen juridisch advies** en geen vervanging van een advocaat, juri
 
 ## Licentie: **AGPL-3.0** (code), **CC BY 4.0** (docs en evaluatieset)
 
+De licentieteksten staan in [LICENSE](LICENSE) (AGPL-3.0, broncode) en [LICENSE-docs](LICENSE-docs) (CC BY 4.0, `docs/` en `eval/data/`).
+
 Waarom AGPL-3.0 en niet Apache-2.0:
 
 - **Het is een webapplicatie.** Onder Apache-2.0 kan iedereen Wetvia als gesloten SaaS aanbieden zonder iets terug te geven. AGPL verplicht wie een aangepaste versie via een netwerk aanbiedt om de broncode te delen. Dat past bij een project dat draait op publieke, CC0-gelicentieerde overheidsdata.
 - **Overheden en open source:** de Rijksoverheid werkt met een "open, tenzij"-beleid voor broncode, en copyleft-licenties (EUPL/AGPL) zijn in de publieke sector gangbaar. **EUPL-1.2** is een prima alternatief als je overheidsgebruik wilt stimuleren. EUPL is compatibel met AGPL en juridisch in het Nederlands beschikbaar.
 - **Portfolio:** voor werkgevers maakt de licentie niets uit. Ze kijken naar de code.
 - **Nadeel:** bedrijven gebruiken AGPL-code minder snel als bibliotheek. Daarom krijgen losse, herbruikbare pakketten (bijv. `packages/nl-wetten-ingest`) **Apache-2.0**.
-- **Data:** overheidsbronnen zijn CC0 (BWB, CVDR, Officiële bekendmakingen, Tweede Kamer) of CC BY 4.0 (DSO, verplicht naamsvermelding: zie [NOTICE](#bronnen-en-naamsvermelding)).
+- **Data:** overheidsbronnen zijn CC0 (BWB, CVDR, Officiële bekendmakingen, Tweede Kamer) of CC BY 4.0 (DSO, verplicht naamsvermelding: zie [Bronnen en naamsvermelding](#bronnen-en-naamsvermelding)).
 
 **Advies:** begin met AGPL-3.0. Die keuze is later nog om te zetten naar EUPL-1.2 zolang jij de enige auteur bent.
 
