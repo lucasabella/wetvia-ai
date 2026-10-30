@@ -24,7 +24,7 @@
 | Lint/format | **ruff** + **mypy** + **import-linter** (Python), **eslint + prettier + svelte-check** (TS) | Contracten in `apps/api/pyproject.toml` | |
 | Tests | **pytest**, **vitest**, **Playwright** (1-2 e2e-smoke-tests) | | |
 | CI | **GitHub Actions**: lint (inclusief `lint-imports`) + tests per PR; eval nightly/handmatig (met een Scaleway-key als repo-secret) | Gratis voor public repos. De workflow zelf is issue #7 | |
-| Deploy | **Docker Compose**: standaard `db`, `api`, `web`. `worker` onder profiel `ingest` (hetzelfde image als `api`). `ollama` alleen onder profiel `gpu-linux`; op een Mac draait Ollama op de host. Geen gateway | Zie 06 | Kubernetes: overkill |
+| Deploy | **Docker Compose**: `docker compose up` start alleen `db`. `api` en `web` zijn placeholders onder een profiel. `worker` onder profiel `ingest` (hetzelfde image als `api`). `ollama` alleen onder profiel `gpu-linux`; op een Mac draait Ollama op de host. Geen gateway | Zie 06 | Kubernetes: overkill |
 | Licentie | **AGPL-3.0** (code), **CC BY 4.0** (docs + eval-set) | Zie README | |
 
 ### Security en privacy (basis)
@@ -45,7 +45,7 @@ wetvia-ai/
 ├─ AGENTS.md                      # regels voor agents
 ├─ pyproject.toml                 # uv-workspace, zonder training/
 ├─ package.json / pnpm-workspace.yaml   # + packages/api-client zodra de client er is
-├─ docker-compose.yml             # db, api, web, worker (profiel ingest)
+├─ docker-compose.yml             # db; api, web, worker, ollama onder profiel
 ├─ docs/{01..06}.md, docs/adr/0002-modulaire-monoliet.md
 ├─ apps/
 │  ├─ api/
@@ -84,7 +84,8 @@ wetvia-ai/
 # eenmalig
 ollama pull qwen3.5:9b && ollama pull qwen3.5:4b
 cp .env.example .env            # vul alleen de waarden in die je nodig hebt
-docker compose up -d db
+docker compose up -d db         # alleen Postgres; api/web/worker/ollama hebben een profiel
+docker compose exec db psql -U wetvia -c "select extversion from pg_extension where extname='vector'"
 cd apps/api && uv sync && uv run alembic upgrade head
 uv run wetvia ingest bwb --preset mvp      # CLI in src/wetvia/cli.py; logica in wetvia.ingest
 uv run fastapi dev src/wetvia/api/app.py   # app-factory; composition root is bootstrap.py

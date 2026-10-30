@@ -111,6 +111,29 @@ pnpm format:check
 
 Het label `agent-ready`, de PR-checklist en dezelfde commando's staan in [CONTRIBUTING.md](CONTRIBUTING.md). Kopieer [`.env.example`](.env.example) naar `.env` als je lokale waarden nodig hebt. Commit nooit `.env`.
 
+## Docker Compose
+
+`docker compose up` start alleen `db`: Postgres 16 met pgvector (`pgvector/pgvector:pg16`). De poort is `127.0.0.1:5432`. Het wachtwoord komt uit `.env` (`POSTGRES_PASSWORD`), niet uit het Compose-bestand. Bij de eerste initialisatie van het volume draait `docker/postgres/init/01-vector.sql` (`CREATE EXTENSION vector`).
+
+```bash
+cp .env.example .env
+docker compose up -d db
+docker compose exec db psql -U wetvia -c "select extversion from pg_extension where extname='vector'"
+```
+
+Op een koude start kan `exec` eerder zijn dan Postgres. `docker compose up -d --wait db` wacht op de healthcheck.
+
+`api` en `web` staan in het bestand als build-context, onder de profielen `api` en `web`. Er is nog geen Dockerfile; issue #3 bouwt het FastAPI-skelet parallel. Daarom start een kale `up` ze niet. `worker` (profiel `ingest`) gebruikt hetzelfde image als `api` en het commando `wetvia ingest sync && wetvia embed`. `ollama` (profiel `gpu-linux`) is optioneel. Standaard draait Ollama op de host.
+
+`api` en `worker` krijgen `LLM_BASE_URL=http://host.docker.internal:11434`, met `extra_hosts` zodat die naam op Linux naar de host wijst. Processen op de host houden `LLM_BASE_URL` uit `.env` (`http://127.0.0.1:11434`). Voor het `gpu-linux`-profiel zet je de container-URL op `http://ollama:11434`. Dat profiel gebruikt het officiële image `ollama/ollama` en de NVIDIA Container Toolkit ([Ollama Docker](https://docs.ollama.com/docker)); de poort blijft `127.0.0.1:11434`. Op een Mac draait Ollama op de host, niet in Compose ([docs/06](docs/06-architectuur-structuur.md)).
+
+```bash
+docker compose --profile ingest up worker
+docker compose --profile gpu-linux up ollama
+```
+
+`--profile ingest` en `--profile api` falen bij de build tot `apps/api/Dockerfile` er is. Hetzelfde geldt voor `--profile web` en `apps/web/Dockerfile`.
+
 ## training
 
 `training/` valt buiten de uv-workspace. Torch en Unsloth botsen met de dependencies van de API, en een workspace deelt één lockfile. Fine-tuning krijgt later een eigen pyproject en venv. De leden zijn alleen `apps/api` en `packages/nl-wetten-ingest`.
