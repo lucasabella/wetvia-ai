@@ -1,9 +1,9 @@
 # wetvia.db
 
-Doel: engine, sessie, schema en Alembic. Eén database, tabellen per module. Nu leeg.
+Doel: async engine, session factory, declarative base en Alembic. De URL komt van de aanroeper. `alembic/env.py` leest alleen de Alembic-config, niet `Settings`.
 
-Publieke API: wat `__init__.py` exporteert. Nu leeg.
+Publieke API: `Base`, `create_db_engine`, `create_session_factory`, `database_status`.
 
-Toegestane imports: `wetvia.core` en de standaardbibliotheek. Niet `wetvia.embeddings` (zelfde laag) en niets daarboven.
+Toegestane imports: `wetvia.core`, SQLAlchemy, Alembic, psycopg en de standaardbibliotheek. Niet `wetvia.config`, `wetvia.embeddings` of een hogere laag.
 
 Test: `cd apps/api && uv run pytest && uv run lint-imports`

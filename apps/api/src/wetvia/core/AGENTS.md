@@ -1,8 +1,8 @@
 # wetvia.core
 
-Doel: gedeelde types (`Peildatum`, `ChunkRef`) en fouten. Geen I/O.
+Doel: gedeelde types (`LlmProvider`, later `Peildatum` en `ChunkRef`) en fouten. Geen I/O.
 
-Publieke API: wat `__init__.py` exporteert. Nu leeg.
+Publieke API: `LlmProvider`.
 
 Toegestane imports: de standaardbibliotheek. Geen andere `wetvia`-module. Verboden: `sqlalchemy`, `httpx`, `openai`, `fastapi`, `sentence_transformers`.
 
