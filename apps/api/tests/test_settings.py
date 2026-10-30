@@ -47,6 +47,16 @@ def test_llm_provider_is_limited() -> None:
         )
 
 
+def test_asgi_app_attribute_is_built_once() -> None:
+    import wetvia.bootstrap as bootstrap
+
+    bootstrap._app = None
+    first = bootstrap.app
+    second = bootstrap.app
+    assert first is second
+    assert bootstrap._app is first
+
+
 def test_build_app_uses_passed_settings_without_reading_a_new_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

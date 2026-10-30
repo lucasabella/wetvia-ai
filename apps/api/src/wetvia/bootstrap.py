@@ -38,8 +38,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
+_app: FastAPI | None = None
+
+
 def __getattr__(name: str) -> FastAPI:
+    global _app
     if name == "app":
-        return build_app()
+        if _app is None:
+            _app = build_app()
+        return _app
     message = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(message)

@@ -40,15 +40,8 @@ def _get(
 
 
 def test_health_reports_injected_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in (
-        "DATABASE_URL",
-        "LLM_PROVIDER",
-        "LLM_BASE_URL",
-        "LLM_MODEL",
-        "LLM_API_KEY",
-        "EMBEDDING_MODEL",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_API_KEY", "should-not-leak")
 
     response = _get("/api/health")
 
@@ -59,6 +52,7 @@ def test_health_reports_injected_values(monkeypatch: pytest.MonkeyPatch) -> None
         "llm_provider": "openai_compat",
         "version": "9.9.9",
     }
+    assert "should-not-leak" not in response.text
 
 
 def test_health_degrades_when_database_check_fails() -> None:

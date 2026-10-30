@@ -1,6 +1,6 @@
 # wetvia.db
 
-Doel: async engine, session factory, declarative base en Alembic. De URL komt van de aanroeper. `alembic/env.py` leest alleen de Alembic-config, niet `Settings`.
+Doel: async engine, session factory, declarative base en Alembic. De app-engine krijgt de URL van de aanroeper. `alembic/env.py` gebruikt `DATABASE_URL` als die gezet is, anders de URL uit `alembic.ini`. Het importeert `Settings` niet.
 
 Publieke API: `Base`, `create_db_engine`, `create_session_factory`, `database_status`.
 

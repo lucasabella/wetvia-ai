@@ -1,6 +1,11 @@
-"""Alembic entry. The URL comes from the Alembic config, not from ``Settings``."""
+"""Alembic entry.
+
+``DATABASE_URL`` wins when it is set. Otherwise the URL in ``alembic.ini`` is used.
+This file does not import ``Settings``: that would cross the import-linter layers.
+"""
 
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -19,9 +24,12 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
+    from_env = os.environ.get("DATABASE_URL", "").strip()
+    if from_env:
+        return from_env
     url = config.get_main_option("sqlalchemy.url")
     if not url:
-        raise RuntimeError("sqlalchemy.url is not set")
+        raise RuntimeError("DATABASE_URL or sqlalchemy.url is not set")
     return url
 
 
