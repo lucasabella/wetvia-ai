@@ -1,0 +1,75 @@
+# `docker compose up` starts only `db` (no profile).
+# `api` and `web` are build-context placeholders under their own profiles:
+# there is no Dockerfile yet, and issue #3 builds the FastAPI skeleton in parallel.
+# `worker` (profile ingest) uses the same image as `api`.
+# `ollama` (profile gpu-linux) is optional; Ollama stays on the host by default.
+# See docs/06-architectuur-structuur.md.
+
+x-api-image: &api-image
+  image: wetvia-api:local
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+  environment:
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wetvia}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-wetvia}
+    # Ollama on the host. For profile gpu-linux use http://ollama:11434, or set a cloud endpoint.
+    LLM_BASE_URL: http://host.docker.internal:11434
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wetvia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-wetvia}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    <<: *api-image
+    profiles: [api]
+
+  web:
+    profiles: [web]
+    build:
+      context: ./apps/web
+
+  worker:
+    <<: *api-image
+    profiles: [ingest]
+    command: ["sh", "-c", "wetvia ingest sync && wetvia embed"]
+
+  ollama:
+    profiles: [gpu-linux]
+    image: ollama/ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    # Official image: GPU on Linux needs the NVIDIA Container Toolkit.
+    # https://docs.ollama.com/docker
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  pgdata:
+  ollama:

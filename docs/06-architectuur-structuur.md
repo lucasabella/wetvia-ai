@@ -117,7 +117,7 @@ wetvia-ai/
 ├─ AGENTS.md                      # NIEUW: regels voor agents
 ├─ pyproject.toml                 # uv-workspace (al op main)
 ├─ package.json / pnpm-workspace.yaml   # + packages/api-client
-├─ docker-compose.yml             # db, api, web, worker (profiel)
+├─ docker-compose.yml             # db; api, web, worker, ollama onder profiel
 ├─ docs/{01..06}.md, docs/adr/0002-modulaire-monoliet.md
 ├─ apps/
 │  ├─ api/
@@ -152,9 +152,9 @@ wetvia-ai/
 
 ## Docker Compose
 
-- **Standaard** (`docker compose up`): `db`, `api`, `web`.
+- **Standaard** (`docker compose up`): alleen `db`. `api` en `web` staan als build-context-placeholders onder de profielen `api` en `web`. Hun Dockerfiles zijn er nog niet, en het FastAPI-skelet (issue #3) loopt parallel, dus een kale `up` probeert die images niet te bouwen. Het doel blijft dat `api` en `web` daarna bij deze standaardset horen.
 - **`worker`** onder het profiel `ingest`: hetzelfde image als `api` met `command: ["sh", "-c", "wetvia ingest sync && wetvia embed"]`. Je draait hem handmatig, of nachtelijk via cron of een GitHub Action [12].
-- **`ollama`** onder het profiel `gpu-linux`: alleen voor de RTX 3070 onder Linux of WSL. Op de Mac draait Ollama native [9]. `api` gebruikt `LLM_BASE_URL`, dus host, container en cloud zijn uitwisselbaar.
+- **`ollama`** onder het profiel `gpu-linux`: alleen voor de RTX 3070 onder Linux of WSL. Op de Mac draait Ollama native [9]. `api` en `worker` krijgen `LLM_BASE_URL` (default `http://host.docker.internal:11434`, met `extra_hosts` voor Linux). Dat vervangt een hard ingestelde `OLLAMA_BASE_URL`. Host, container en cloud blijven uitwisselbaar door die URL te wijzigen.
 - Geen gateway, queue of service mesh. De SSE-chat loopt direct naar `api`.
 
 ## Pad naar afsplitsen (alleen bij een gemeten reden)
