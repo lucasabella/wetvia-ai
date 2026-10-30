@@ -41,7 +41,7 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Sync
-        run: uv sync --all-packages --all-groups
+        run: uv sync --locked --all-packages --all-groups
 
       - name: Enable pgvector
         working-directory: apps/api
@@ -86,7 +86,7 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Sync
-        run: uv sync --all-packages --all-groups
+        run: uv sync --locked --all-packages --all-groups
 
       - name: Ruff
         working-directory: packages/nl-wetten-ingest
@@ -126,6 +126,9 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: Format
+        run: pnpm format:check
 
       - name: Vitest
         run: pnpm test

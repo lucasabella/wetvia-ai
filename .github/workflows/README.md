@@ -7,9 +7,9 @@
 
 | Job | Wat |
 | --- | --- |
-| `api` | uv sync, ruff, mypy, `uv run lint-imports`, pytest. Postgres 16 + pgvector als service; de stap ervoor zet `CREATE EXTENSION vector` |
-| `nl-wetten-ingest` | uv sync, ruff, mypy, pytest. Eigen job, niet meegenomen in `api` |
-| `web` | `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm lint`, `pnpm test` (vitest) |
+| `api` | `uv sync --locked`, ruff, mypy, `uv run lint-imports`, pytest. Postgres 16 + pgvector als service; de stap ervoor zet `CREATE EXTENSION vector` |
+| `nl-wetten-ingest` | `uv sync --locked`, ruff, mypy, pytest. Eigen job, niet meegenomen in `api` |
+| `web` | `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` (vitest) |
 
 uv en pnpm gebruiken de Actions-cache.
 
