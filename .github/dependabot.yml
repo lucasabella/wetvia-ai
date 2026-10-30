@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Python dependencies live in uv.lock. Dependabot's uv ecosystem updates
+  # that lockfile. The pip ecosystem does not, and a second entry on /
+  # would open duplicate pull requests.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
