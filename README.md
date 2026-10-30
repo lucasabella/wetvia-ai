@@ -80,3 +80,32 @@ Waarom AGPL-3.0 en niet Apache-2.0:
 ## Bijdragen
 
 Issues met het label `agent-ready` zijn compleet gespecificeerd, met acceptatiecriteria. Lees eerst `docs/04-tech-stack.md` (repo-structuur en conventies).
+
+## Skelet en tooling
+
+Python 3.12 met uv (`apps/api`, `packages/nl-wetten-ingest`) en pnpm (`apps/web`). Lint en types: ruff, mypy, eslint en TypeScript. Nog geen FastAPI- of SvelteKit-applicatie.
+
+```bash
+uv sync --all-packages --all-groups
+pnpm install
+
+cd apps/api
+uv run ruff check
+uv run ruff format --check
+uv run mypy src
+uv run pytest
+
+cd ../../packages/nl-wetten-ingest
+uv run ruff check
+uv run ruff format --check
+uv run mypy src
+uv run pytest
+
+cd ../..
+pnpm lint
+pnpm check
+pnpm test
+pnpm format:check
+```
+
+Het label `agent-ready`, de PR-checklist en dezelfde commando's staan in [CONTRIBUTING.md](CONTRIBUTING.md). Kopieer [`.env.example`](.env.example) naar `.env` als je lokale waarden nodig hebt. Commit nooit `.env`.

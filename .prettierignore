@@ -1,0 +1,17 @@
+# Projectplan and README stay as merged from main; do not reflow them.
+docs/
+README.md
+
+.venv/
+node_modules/
+.svelte-kit/
+build/
+.output/
+dist/
+coverage/
+pnpm-lock.yaml
+uv.lock
+LICENSE
+LICENSE-docs
+packages/nl-wetten-ingest/LICENSE
+*.gguf
