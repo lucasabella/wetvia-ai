@@ -19,11 +19,12 @@
 | Documenten genereren | **docxtpl** (DOCX-template) + **WeasyPrint** (HTML → PDF) | Templates zijn editbaar in Word | python-docx van scratch |
 | Documenten parsen (fase 2) | **Docling** (PDF/DOCX → structuur), [PyPI](https://pypi.org/project/docling/) | Lokaal, MIT, goede tabelherkenning | unstructured |
 | Eval | **pytest** + eigen runner (`eval/run.py`) → JSON + Markdown-rapport | Transparant, geen black box | Ragas/DeepEval (kan later als vergelijking) |
-| Fine-tuning (fase 3) | **Unsloth** + TRL, notebooks in `training/` | Zie 02 §7 | Axolotl |
-| Lint/format | **ruff** + **mypy** (Python), **eslint + prettier + svelte-check** (TS) | | |
+| Fine-tuning (fase 3) | **Unsloth** + TRL, notebooks in `training/` | Eigen venv, **buiten** de uv-workspace (torch/Unsloth versus één lockfile). Zie 02 §7 en 06 | Axolotl |
+| Architectuur | **Modulaire monoliet** (`wetvia` in één proces; grenzen via import-linter) | Zie [06](06-architectuur-structuur.md) | Microservices |
+| Lint/format | **ruff** + **mypy** + **import-linter** (Python), **eslint + prettier + svelte-check** (TS) | Contracten in `apps/api/pyproject.toml` | |
 | Tests | **pytest**, **vitest**, **Playwright** (1-2 e2e-smoke-tests) | | |
-| CI | **GitHub Actions**: lint + tests per PR; eval nightly/handmatig (met een Scaleway-key als repo-secret) | Gratis voor public repos | |
-| Deploy | **Docker Compose** (`db`, `api`, `web`; Ollama draait op de host). Fase 2: een demo-VPS (EU) met cloudmodus | | Kubernetes: overkill |
+| CI | **GitHub Actions**: lint (inclusief `lint-imports`) + tests per PR; eval nightly/handmatig (met een Scaleway-key als repo-secret) | Gratis voor public repos. De workflow zelf is issue #7 | |
+| Deploy | **Docker Compose**: standaard `db`, `api`, `web`. `worker` onder profiel `ingest` (hetzelfde image als `api`). `ollama` alleen onder profiel `gpu-linux`; op een Mac draait Ollama op de host. Geen gateway | Zie 06 | Kubernetes: overkill |
 | Licentie | **AGPL-3.0** (code), **CC BY 4.0** (docs + eval-set) | Zie README | |
 
 ### Security en privacy (basis)
@@ -37,52 +38,44 @@
 
 ## Repostructuur (monorepo)
 
+Processen en modulegrenzen: [06. Architectuur en structuur](06-architectuur-structuur.md). Geen microservices. De boom hieronder is die doelstructuur. De lege `wetvia`-modules en het import-linter-contract staan er; de overige bestanden vullen latere issues in. `training/` is geen uv-workspace-member.
+
 ```
 wetvia-ai/
-├─ README.md
-├─ LICENSE                      # AGPL-3.0
-├─ LICENSE-docs                 # CC BY 4.0 (docs/, eval/data/)
-├─ CONTRIBUTING.md              # incl. "agent-ready"-uitleg
-├─ SECURITY.md
-├─ docker-compose.yml           # db, api, web
-├─ .env.example
-├─ .github/
-│  ├─ workflows/{ci.yml, eval.yml, drift-check.yml}
-│  ├─ ISSUE_TEMPLATE/{agent-task.yml, bug.yml}
-│  └─ pull_request_template.md
-├─ docs/                        # dit plan + ADR's
-│  └─ adr/0001-llm-provider-abstraction.md …
+├─ AGENTS.md                      # regels voor agents
+├─ pyproject.toml                 # uv-workspace, zonder training/
+├─ package.json / pnpm-workspace.yaml   # + packages/api-client zodra de client er is
+├─ docker-compose.yml             # db, api, web, worker (profiel ingest)
+├─ docs/{01..06}.md, docs/adr/0002-modulaire-monoliet.md
 ├─ apps/
-│  ├─ web/                      # SvelteKit
-│  │  ├─ src/lib/components/{chat, sources, dossier, ui}/
-│  │  ├─ src/lib/stores/        # gesprekken (IndexedDB)
-│  │  ├─ src/lib/api/           # typed client (gegenereerd uit OpenAPI)
-│  │  └─ src/routes/{+page.svelte, dossier/, instellingen/, over/}
-│  └─ api/                      # FastAPI
-│     ├─ pyproject.toml
-│     ├─ src/wetvia/
-│     │  ├─ main.py             # app + routers
-│     │  ├─ config.py           # pydantic-settings
-│     │  ├─ llm/                # provider.py, ollama.py, openai_compat.py, prompts/
-│     │  ├─ retrieval/          # hybrid.py, rrf.py, filters.py
-│     │  ├─ rules/              # bbl_dakkapel.py (regels-als-code) + tests
-│     │  ├─ answer/             # schema.py (AnswerV1), pipeline.py, verifier.py
-│     │  ├─ dossier/            # schema.py, render_docx.py, templates/
-│     │  ├─ db/                 # models.py, alembic/
-│     │  └─ api/                # routes: chat.py, sources.py, dossier.py, health.py
-│     └─ tests/
+│  ├─ api/
+│  │  ├─ pyproject.toml           # import-linter-contracten
+│  │  ├─ src/wetvia/
+│  │  │  ├─ bootstrap.py          # composition root: Settings → adapters
+│  │  │  ├─ config.py             # pydantic-settings (alleen bootstrap leest dit)
+│  │  │  ├─ core/                 # types, fouten, peildatum (geen I/O)
+│  │  │  ├─ api/                  # app.py (factory), routes/, schemas/
+│  │  │  ├─ cli.py                # Typer: ingest, embed
+│  │  │  ├─ answer/               # pipeline, AnswerV1, prompts/
+│  │  │  ├─ citations/            # verifier, abstentie (puur)
+│  │  │  ├─ retrieval/            # Retriever-port, hybride zoeken
+│  │  │  ├─ ingest/               # nl_wetten_ingest → db
+│  │  │  ├─ embeddings/           # Embedder-port
+│  │  │  ├─ llm/                  # LLMProvider-port, adapters/
+│  │  │  ├─ rules/                # regels-als-code (puur)
+│  │  │  ├─ dossier/              # renderers, templates/
+│  │  │  ├─ documents/            # v0.2: upload, redactie
+│  │  │  └─ db/                   # engine, schema/, alembic/
+│  │  └─ tests/
+│  └─ web/src/lib/
+│     ├─ features/{chat,sources,dossier,settings}/
+│     ├─ ui/                      # shadcn-svelte
+│     └─ (api-client via @wetvia/api-client)
 ├─ packages/
-│  └─ nl-wetten-ingest/         # los herbruikbaar pakket (Apache-2.0)
-│     └─ src/nl_wetten_ingest/{bwb.py, cvdr.py, tk.py, dso.py, parse_bwb_xml.py, cli.py}
-├─ eval/
-│  ├─ data/v0.jsonl             # CC BY 4.0
-│  ├─ rubrics/                  # judge-prompts
-│  ├─ run.py                    # draait pipeline + metrics
-│  └─ reports/                  # gegenereerde rapporten (per release)
-└─ training/                    # fase 3
-   ├─ DATA_CARD.md
-   ├─ generate_sft.py
-   └─ notebooks/qwen35_lora.ipynb
+│  ├─ nl-wetten-ingest/           # Apache-2.0, kent wetvia niet
+│  └─ api-client/                 # openapi.json + gegenereerde TS-client (later)
+├─ eval/                          # consumer van de publieke API
+└─ training/                      # eigen pyproject/venv, buiten de workspace
 ```
 
 ## Lokale ontwikkelomgeving
@@ -93,9 +86,10 @@ ollama pull qwen3.5:9b && ollama pull qwen3.5:4b
 cp .env.example .env            # vul alleen de waarden in die je nodig hebt
 docker compose up -d db
 cd apps/api && uv sync && uv run alembic upgrade head
-uv run wetvia ingest bwb --preset mvp      # Omgevingswet-kern + Awb + BW5
-uv run fastapi dev src/wetvia/main.py
+uv run wetvia ingest bwb --preset mvp      # CLI in src/wetvia/cli.py; logica in wetvia.ingest
+uv run fastapi dev src/wetvia/api/app.py   # app-factory; composition root is bootstrap.py
 cd ../web && pnpm i && pnpm dev
+# worker, later: hetzelfde image, profiel ingest, commando `wetvia ingest sync && wetvia embed`
 ```
 
 ### MVP-corpus (`--preset mvp`)
