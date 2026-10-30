@@ -1,2 +1,2 @@
-/** Placeholder tot de SvelteKit-app er is. Geen UI in dit skelet. */
+/** Merknaam uit docs/03. */
 export const appName = "wetvia";

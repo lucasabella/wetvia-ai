@@ -83,7 +83,7 @@ Issues met het label `agent-ready` zijn compleet gespecificeerd, met acceptatiec
 
 ## Skelet en tooling
 
-Python 3.12 met uv (`apps/api`, `packages/nl-wetten-ingest`) en pnpm (`apps/web`). Lint en types: ruff, mypy, eslint en TypeScript. Nog geen FastAPI- of SvelteKit-applicatie.
+Python 3.12 met uv (`apps/api`, `packages/nl-wetten-ingest`) en pnpm (`apps/web`). Lint en types: ruff, mypy, eslint, svelte-check en TypeScript. De SvelteKit-shell staat in `apps/web`.
 
 ```bash
 uv sync --all-packages --all-groups

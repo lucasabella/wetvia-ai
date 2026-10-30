@@ -1,4 +1,7 @@
 {
   "endOfLine": "lf",
-  "proseWrap": "preserve"
+  "proseWrap": "preserve",
+  "plugins": ["prettier-plugin-svelte", "prettier-plugin-tailwindcss"],
+  "tailwindStylesheet": "./apps/web/src/routes/layout.css",
+  "overrides": [{ "files": "*.svelte", "options": { "parser": "svelte" } }]
 }
