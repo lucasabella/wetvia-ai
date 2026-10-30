@@ -53,6 +53,6 @@ cd ../../packages/nl-wetten-ingest && uv run ruff check && uv run ruff format --
 cd ../.. && pnpm lint && pnpm check && pnpm test && pnpm format:check
 ```
 
-`uv run lint-imports` hoort bij de api-checks. Er is nog geen CI-workflow; de stap voor issue #7 staat in [`.github/workflows/README.md`](.github/workflows/README.md).
+`uv run lint-imports` draait in de `api`-job van [`.github/workflows/ci.yml`](.github/workflows/ci.yml). De OpenAPI-diff-check komt met #39; de plek staat in die job.
 
 `pnpm test` draait vitest in `apps/web`. Python-tests zijn pytest in de twee workspace-members. `training/` zit niet in de uv-workspace.

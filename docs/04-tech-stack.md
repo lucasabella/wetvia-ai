@@ -23,7 +23,7 @@
 | Architectuur | **Modulaire monoliet** (`wetvia` in één proces; grenzen via import-linter) | Zie [06](06-architectuur-structuur.md) | Microservices |
 | Lint/format | **ruff** + **mypy** + **import-linter** (Python), **eslint + prettier + svelte-check** (TS) | Contracten in `apps/api/pyproject.toml` | |
 | Tests | **pytest**, **vitest**, **Playwright** (1-2 e2e-smoke-tests) | | |
-| CI | **GitHub Actions**: lint (inclusief `lint-imports`) + tests per PR; eval nightly/handmatig (met een Scaleway-key als repo-secret) | Gratis voor public repos. De workflow zelf is issue #7 | |
+| CI | **GitHub Actions**: lint (inclusief `lint-imports`) + tests per PR; eval nightly/handmatig (met een Scaleway-key als repo-secret) | Gratis voor public repos. Jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | |
 | Deploy | **Docker Compose**: `docker compose up` start alleen `db`. `api` en `web` zijn placeholders onder een profiel. `worker` onder profiel `ingest` (hetzelfde image als `api`). `ollama` alleen onder profiel `gpu-linux`; op een Mac draait Ollama op de host. Geen gateway | Zie 06 | Kubernetes: overkill |
 | Licentie | **AGPL-3.0** (code), **CC BY 4.0** (docs + eval-set) | Zie README | |
 

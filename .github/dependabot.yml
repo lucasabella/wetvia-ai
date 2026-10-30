@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Python dependencies are locked in uv.lock. Dependabot's uv ecosystem
+  # updates that lockfile. `pip` is the ecosystem named in issue #7; it
+  # reads the same pyproject manifests.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

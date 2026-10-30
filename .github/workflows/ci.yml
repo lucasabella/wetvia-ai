@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: api
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: wetvia
+          POSTGRES_PASSWORD: wetvia
+          POSTGRES_DB: wetvia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wetvia -d wetvia"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # CI-only database. Not a project secret.
+      DATABASE_URL: postgresql+psycopg://wetvia:wetvia@localhost:5432/wetvia
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.12"
+          cache-dependency-glob: uv.lock
+
+      - name: Sync
+        run: uv sync --all-packages --all-groups
+
+      - name: Enable pgvector
+        working-directory: apps/api
+        run: uv run python -c "import os; from sqlalchemy import create_engine, text; engine = create_engine(os.environ['DATABASE_URL']); conn = engine.connect(); conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector')); conn.commit()"
+
+      - name: Ruff
+        working-directory: apps/api
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+
+      - name: Mypy
+        working-directory: apps/api
+        run: uv run mypy src
+
+      - name: Import contracts
+        working-directory: apps/api
+        run: uv run lint-imports
+
+      - name: Pytest
+        working-directory: apps/api
+        run: uv run pytest
+
+      # --- #39 OpenAPI-check (nog niet) ---
+      # packages/api-client/openapi.json bestaat nog niet.
+      # Zodra #39 die spec toevoegt: genereer de spec opnieuw vanuit de
+      # app-factory (geen server, geen database) en faal bij een diff.
+      # Die stap hoort in deze api-job, niet in een aparte workflow.
+
+  nl-wetten-ingest:
+    name: nl-wetten-ingest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.12"
+          cache-dependency-glob: uv.lock
+
+      - name: Sync
+        run: uv sync --all-packages --all-groups
+
+      - name: Ruff
+        working-directory: packages/nl-wetten-ingest
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+
+      - name: Mypy
+        working-directory: packages/nl-wetten-ingest
+        run: uv run mypy src
+
+      - name: Pytest
+        working-directory: packages/nl-wetten-ingest
+        run: uv run pytest
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Vitest
+        run: pnpm test
+
+  # eval: eigen job zodra eval/ een uv-workspace-member is (docs/06).

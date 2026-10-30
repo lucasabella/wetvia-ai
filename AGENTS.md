@@ -20,7 +20,7 @@ docker compose up -d db
 
 `docker compose up` start alleen `db`. `api` en `web` hebben een profiel zolang hun Dockerfile er niet is. `worker` heeft profiel `ingest`. `ollama` heeft profiel `gpu-linux`.
 
-`uv run lint-imports` hoort in de api-job van CI. Die workflow is er nog niet; de stap staat in `.github/workflows/README.md` voor issue #7.
+CI staat in `.github/workflows/ci.yml`: aparte jobs voor `api` (inclusief `uv run lint-imports` en Postgres + pgvector), `nl-wetten-ingest` en `web`. De OpenAPI-check van #39 is daar gemarkeerd en nog niet actief.
 
 ## Grenzen
 
