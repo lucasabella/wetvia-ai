@@ -138,6 +138,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Install Chromium for browser and axe checks
+        run: pnpm --filter @wetvia/web exec playwright install --with-deps chromium
+
       - name: Typecheck
         run: pnpm check
 
@@ -149,6 +152,9 @@ jobs:
 
       - name: Vitest
         run: pnpm test
+
+      - name: Playwright and axe
+        run: pnpm --filter @wetvia/web test:browser
 
   eval:
     name: eval

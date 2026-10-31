@@ -9,7 +9,7 @@
 | --- | --- |
 | `api` | `uv sync --locked`, generated OpenAPI/client diff check with pnpm, client typecheck/tests, ruff, mypy, `uv run lint-imports`, pytest. Postgres 16 + pgvector als service; the exporter itself uses no database or model |
 | `nl-wetten-ingest` | `uv sync --locked`, ruff, mypy, pytest. Eigen job, niet meegenomen in `api` |
-| `web` | `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` (vitest) |
+| `web` | `pnpm install --frozen-lockfile`, Chromium install, `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` (vitest), Playwright/axe desktop and mobile checks |
 | `eval` | `uv sync --locked`, ruff, mypy, pytest in `eval/`. Geen Ollama en geen modelgewichten |
 
 uv en pnpm gebruiken de Actions-cache.
