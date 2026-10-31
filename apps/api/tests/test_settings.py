@@ -77,3 +77,19 @@ def test_build_app_uses_passed_settings_without_reading_a_new_provider(
     context = app.state.health_context
     assert context.llm_provider == "openai_compat"
     assert "not-a-real-key" not in repr(app.state)
+
+
+def test_build_app_injects_retriever_without_loading_embedding_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import wetvia.bootstrap as bootstrap
+
+    def reject_model_load(*args: object, **kwargs: object) -> object:
+        raise AssertionError("model loading must wait until a search request")
+
+    monkeypatch.setattr(bootstrap, "SentenceTransformersEmbedder", reject_model_load)
+    app = build_app(_settings())
+
+    assert app.state.retriever is not None
+    assert app.state.retriever._embedder.model_id == "intfloat/multilingual-e5-large-instruct"
+    assert app.state.retriever._embedder.dimension == 1024

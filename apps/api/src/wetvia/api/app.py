@@ -6,12 +6,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from wetvia.api.deps import HealthContext
-from wetvia.api.routes import health_router
+from wetvia.api.routes import health_router, search_router
+from wetvia.retrieval import Retriever
 
 
 def create_app(
     context: HealthContext,
     *,
+    retriever: Retriever | None = None,
     shutdown: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -29,5 +31,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.health_context = context
+    app.state.retriever = retriever
     app.include_router(health_router)
+    app.include_router(search_router)
     return app

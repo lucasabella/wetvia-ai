@@ -46,9 +46,27 @@ uses overlapping windows (up to 32 tokens). It repeats the passage heading
 when the context budget allows, then length-weights and normalizes the window
 vectors into one chunk vector.
 
+## Retrieval
+
+`GET /api/search?q=...&peildatum=YYYY-MM-DD` returns up to eight ranked legal
+chunks; `k` and `include_future=true` are optional. The pg adapter runs Dutch
+full-text and cosine-vector candidates in one SQL statement, fuses them with
+RRF, and validates that the query model matches the stored embedding-space
+identity. Query embedding is formatted with the multilingual-E5 instruction and
+run off the event loop. The model loads on the first search request, not during
+API startup. `GET /api/sources/{chunk_id}` returns the chunk text and legal
+provenance used for its citation.
+
+Both candidate rankings apply inclusive validity dates in SQL and exclude
+repealed articles. `include_future=true` also searches states whose start date
+is after the requested date; returned legal status is calculated against that
+requested date. An exact article reference receives a small `0.01` score nudge
+only when its exact label already appears in the top-30 FTS or vector candidates;
+it does not add same-numbered articles from unrelated regulations.
+
 The data schema requires PostgreSQL with pgvector. SQLite migration tests cover
-Alembic URL selection only; CI runs migration, ingest, and embedding job
-integration tests on its PostgreSQL+pgvector service.
+Alembic URL selection only; CI runs retrieval, migration, ingest, and embedding
+job integration tests on its PostgreSQL+pgvector service.
 
 Lagen, van hoog naar laag: `bootstrap`, `api` | `cli`, `answer` | `dossier` | `documents`, `retrieval` | `ingest` | `citations` | `rules` | `llm`, `embeddings` | `db`, `core`. Elke module heeft een `AGENTS.md`.
 
