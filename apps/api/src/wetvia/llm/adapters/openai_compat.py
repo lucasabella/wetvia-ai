@@ -1,8 +1,10 @@
 """OpenAI-compatible chat.
 
-``json_schema`` falls back to ``json_object`` when the server rejects it.
+``json_schema`` with a strict schema falls back to ``json_object`` only when the
+server rejects the schema (HTTP 400 or 422). Auth and rate-limit errors propagate.
 """
 
+import json
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, cast
 
@@ -11,12 +13,33 @@ from openai import APIStatusError, AsyncOpenAI
 from wetvia.llm.parsing import parse_with_one_retry
 from wetvia.llm.ports import ChatMessage, ModelT
 
+_SCHEMA_UNSUPPORTED = frozenset({400, 422})
+
+
+def strict_json_schema(schema: object) -> object:
+    """Close every object, including ``$defs``, so ``strict: true`` is accepted."""
+    if isinstance(schema, list):
+        return [strict_json_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    result: dict[str, object] = {key: strict_json_schema(value) for key, value in schema.items()}
+    properties = result.get("properties")
+    is_object = result.get("type") == "object" or isinstance(properties, dict)
+    if is_object:
+        if isinstance(properties, dict):
+            result["required"] = list(properties)
+        elif "required" not in result:
+            result["required"] = []
+        result["additionalProperties"] = False
+    return result
+
 
 class OpenAICompatProvider:
     def __init__(self, base_url: str, model: str, api_key: str) -> None:
         self._base_url = base_url
         self._model = model
         self._api_key = api_key
+        self._json_object_only = False
 
     def __repr__(self) -> str:
         return f"OpenAICompatProvider(base_url={self._base_url!r}, model={self._model!r})"
@@ -46,20 +69,39 @@ class OpenAICompatProvider:
         schema: type[ModelT],
         temperature: float,
     ) -> str:
+        if self._json_object_only:
+            return await self._create_json_object(messages, schema, temperature)
         json_schema: dict[str, object] = {
             "type": "json_schema",
             "json_schema": {
                 "name": schema.__name__,
-                "schema": schema.model_json_schema(),
+                "schema": strict_json_schema(schema.model_json_schema()),
                 "strict": True,
             },
         }
         try:
             return await self._create(messages, temperature, json_schema)
         except APIStatusError as exc:
-            if exc.status_code >= 500:
+            if exc.status_code not in _SCHEMA_UNSUPPORTED:
                 raise
-            return await self._create(messages, temperature, {"type": "json_object"})
+            self._json_object_only = True
+            return await self._create_json_object(messages, schema, temperature)
+
+    async def _create_json_object(
+        self,
+        messages: Sequence[ChatMessage],
+        schema: type[ModelT],
+        temperature: float,
+    ) -> str:
+        encoded = json.dumps(
+            strict_json_schema(schema.model_json_schema()),
+            separators=(",", ":"),
+        )
+        instruction = ChatMessage(
+            role="system",
+            content=f"Reply with JSON only. JSON schema: {encoded}",
+        )
+        return await self._create((instruction, *messages), temperature, {"type": "json_object"})
 
     async def _complete_text(self, messages: Sequence[ChatMessage], temperature: float) -> str:
         return await self._create(messages, temperature, None)

@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
+from openai import APIStatusError
 from pydantic import BaseModel, ValidationError
 
 from wetvia.bootstrap import get_provider
@@ -16,7 +17,7 @@ from wetvia.config import Settings
 from wetvia.core import LlmProvider
 from wetvia.llm.adapters.fake import FakeProvider
 from wetvia.llm.adapters.ollama import OllamaProvider
-from wetvia.llm.adapters.openai_compat import OpenAICompatProvider
+from wetvia.llm.adapters.openai_compat import OpenAICompatProvider, strict_json_schema
 from wetvia.llm.ports import ChatMessage
 
 _LLM_ROOT = Path(__file__).resolve().parents[1] / "src" / "wetvia" / "llm"
@@ -91,6 +92,11 @@ def test_llm_package_does_not_import_settings() -> None:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module and "wetvia.config" in node.module:
                 raise AssertionError(path)
+
+
+def test_openai_compat_requires_an_api_key() -> None:
+    with pytest.raises(RuntimeError, match="LLM_API_KEY"):
+        get_provider(_settings("openai_compat"))
 
 
 def test_get_provider_uses_settings_not_a_network() -> None:
@@ -171,6 +177,34 @@ def test_ollama_retries_then_accepts_valid_json() -> None:
     assert asyncio.run(run()).value == "ok"
 
 
+def test_ollama_error_body_is_raised() -> None:
+    async def run() -> None:
+        with respx.mock:
+            respx.post("http://ollama.test/api/chat").mock(
+                return_value=httpx.Response(200, json={"error": "model not found"})
+            )
+            provider = OllamaProvider("http://ollama.test", "dummy-model")
+            with pytest.raises(RuntimeError, match="model not found"):
+                await provider.chat(_messages(), None, False, 0.0)
+
+    asyncio.run(run())
+
+
+def test_ollama_stream_error_is_raised() -> None:
+    async def run() -> None:
+        with respx.mock:
+            respx.post("http://ollama.test/api/chat").mock(
+                return_value=httpx.Response(200, text='{"error":"model not found"}\n')
+            )
+            provider = OllamaProvider("http://ollama.test", "dummy-model")
+            stream = await provider.chat(_messages(), None, True, 0.0)
+            assert isinstance(stream, AsyncIterator)
+            with pytest.raises(RuntimeError, match="model not found"):
+                _ = [chunk async for chunk in stream]
+
+    asyncio.run(run())
+
+
 def test_ollama_streams_text_chunks() -> None:
     raw = (
         '{"message":{"role":"assistant","content":"Hel"},"done":false}\n'
@@ -211,13 +245,88 @@ def test_openai_falls_back_to_json_object_when_schema_is_rejected() -> None:
             result = await provider.chat(_messages(), Probe, False, 0.0)
         first = json.loads(route.calls[0].request.content)
         second = json.loads(route.calls[1].request.content)
-        assert first["response_format"]["type"] == "json_schema"
+        schema = first["response_format"]["json_schema"]["schema"]
+        assert schema["additionalProperties"] is False
+        assert schema["required"] == ["value"]
+        assert first["response_format"]["json_schema"]["strict"] is True
         assert second["response_format"] == {"type": "json_object"}
+        instruction = second["messages"][0]
+        assert instruction["role"] == "system"
+        assert "JSON" in instruction["content"]
+        assert "Probe" in instruction["content"]
         assert route.calls[0].request.headers["authorization"] == "Bearer test-key"
         assert isinstance(result, Probe)
         assert result.value == "ok"
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("status_code", [401, 403, 404, 429])
+def test_openai_does_not_fall_back_on_non_schema_errors(status_code: int) -> None:
+    async def run() -> None:
+        with respx.mock:
+            route = respx.post("http://llm.test/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    status_code,
+                    json={"error": {"message": "nope", "type": "invalid_request_error"}},
+                )
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            with pytest.raises(APIStatusError) as caught:
+                await provider.chat(_messages(), Probe, False, 0.0)
+        assert caught.value.status_code == status_code
+        assert route.call_count == 1
+
+    asyncio.run(run())
+
+
+def test_openai_json_object_fallback_is_kept_for_the_retry() -> None:
+    async def run() -> None:
+        with respx.mock:
+            route = respx.post("http://llm.test/v1/chat/completions").mock(
+                side_effect=[
+                    httpx.Response(
+                        422,
+                        json={"error": {"message": "unsupported", "type": "invalid_request_error"}},
+                    ),
+                    httpx.Response(200, json=_openai_body("not-json")),
+                    httpx.Response(200, json=_openai_body('{"value":"ok"}')),
+                ]
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            result = await provider.chat(_messages(), Probe, False, 0.0)
+        assert route.call_count == 3
+        formats = [
+            json.loads(call.request.content)["response_format"]["type"] for call in route.calls
+        ]
+        assert formats == ["json_schema", "json_object", "json_object"]
+        retry = json.loads(route.calls[2].request.content)
+        assert retry["messages"][0]["content"].startswith("Reply with JSON only")
+        assert any("Validation failed" in message["content"] for message in retry["messages"])
+        assert isinstance(result, Probe)
+
+    asyncio.run(run())
+
+
+def test_strict_json_schema_closes_objects_and_defs() -> None:
+    strict = strict_json_schema(
+        {
+            "type": "object",
+            "properties": {"child": {"$ref": "#/$defs/Child"}},
+            "$defs": {
+                "Child": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                }
+            },
+        }
+    )
+    assert isinstance(strict, dict)
+    assert strict["additionalProperties"] is False
+    assert strict["required"] == ["child"]
+    child = strict["$defs"]["Child"]
+    assert child["additionalProperties"] is False
+    assert child["required"] == ["name"]
 
 
 def test_openai_retries_invalid_json_once() -> None:

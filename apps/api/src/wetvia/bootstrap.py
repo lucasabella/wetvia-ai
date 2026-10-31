@@ -25,7 +25,9 @@ def get_provider(settings: Settings) -> LLMProvider:
     """Build the configured adapter. This is the only place that reads LLM settings."""
     if settings.llm_provider == "ollama":
         return OllamaProvider(base_url=settings.llm_base_url, model=settings.llm_model)
-    api_key = "not-set" if settings.llm_api_key is None else settings.llm_api_key.get_secret_value()
+    if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value().strip():
+        raise RuntimeError("LLM_API_KEY is required when LLM_PROVIDER is openai_compat")
+    api_key = settings.llm_api_key.get_secret_value()
     return OpenAICompatProvider(
         base_url=settings.llm_base_url,
         model=settings.llm_model,

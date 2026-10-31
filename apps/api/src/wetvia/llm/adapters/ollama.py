@@ -11,6 +11,15 @@ from wetvia.llm.ports import ChatMessage, ModelT
 _TIMEOUT = httpx.Timeout(60.0)
 
 
+def _raise_if_ollama_error(body: object) -> None:
+    if not isinstance(body, dict) or "error" not in body:
+        return
+    detail = body["error"]
+    if isinstance(detail, str) and detail:
+        raise RuntimeError(f"Ollama error: {detail}")
+    raise RuntimeError("Ollama error")
+
+
 class OllamaProvider:
     def __init__(self, base_url: str, model: str) -> None:
         self._base_url = base_url.rstrip("/")
@@ -57,6 +66,7 @@ class OllamaProvider:
             response = await client.post(f"{self._base_url}/api/chat", json=payload)
             response.raise_for_status()
             body = response.json()
+        _raise_if_ollama_error(body)
         message = body.get("message")
         if not isinstance(message, dict):
             return ""
@@ -79,6 +89,7 @@ class OllamaProvider:
                 if not line.strip():
                     continue
                 data = json.loads(line)
+                _raise_if_ollama_error(data)
                 message = data.get("message")
                 if isinstance(message, dict):
                     content = message.get("content")
