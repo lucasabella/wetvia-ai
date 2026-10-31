@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from datetime import date
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
@@ -77,3 +78,6 @@ def test_ollama_answers_from_saved_official_bbl_article() -> None:
     assert answer.status == "beantwoord"
     assert answer.punten
     assert any(chunk_id in point.bron_ids for point in answer.punten)
+    # Narrow smoke check against the saved official text; this is not a legal review.
+    answer_text = " ".join([answer.samenvatting, *(point.tekst for point in answer.punten)])
+    assert re.search(r"(?<!\d)1[,.]75(?:\s*(?:m|meter))?(?!\d)", answer_text, re.IGNORECASE)

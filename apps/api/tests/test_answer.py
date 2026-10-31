@@ -14,7 +14,6 @@ from wetvia.answer import (
     AnswerDateMismatchError,
     AnswerPipeline,
     AnswerV1,
-    UnknownSourceLabelError,
     Utf8ByteUpperBoundCounter,
 )
 from wetvia.llm.adapters.fake import FakeProvider
@@ -161,7 +160,7 @@ def test_pipeline_searches_hybrid_at_requested_date_and_maps_labels_to_uuids() -
         if "bron_ids" in value.get("properties", {})
     )
     label_constraint = point_schema["properties"]["bron_ids"]["items"]
-    assert label_constraint["pattern"] == r"^\[[1-8]\]$"
+    assert label_constraint.get("enum", [label_constraint.get("const")]) == ["[1]"]
 
 
 def test_invalid_input_date_and_model_date_are_rejected() -> None:
@@ -254,8 +253,13 @@ def test_invalid_schema_output_retries_once_and_unknown_source_labels_fail_close
     assert answer.punten[0].bron_ids == [source.chunk_id]
     assert provider._replies == []
 
-    pipeline, _retriever, provider = _pipeline([source], [_reply(["[8]"])])
-    with pytest.raises(UnknownSourceLabelError):
+    pipeline, _retriever, provider = _pipeline([source], [_reply(["[8]"]), _reply(["[1]"])])
+    answer = asyncio.run(pipeline.answer("synthetic question", date(2026, 10, 31)))
+    assert answer.punten[0].bron_ids == [source.chunk_id]
+    assert provider._replies == []  # invalid unsent label was consumed by provider retry
+
+    pipeline, _retriever, provider = _pipeline([source], [_reply(["[8]"]), _reply(["[8]"])])
+    with pytest.raises(ValidationError):
         asyncio.run(pipeline.answer("synthetic question", date(2026, 10, 31)))
     assert provider._replies == []
 

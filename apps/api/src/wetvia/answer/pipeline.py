@@ -6,10 +6,10 @@ import html
 from collections.abc import Sequence
 from datetime import date, datetime
 from importlib.resources import files
-from typing import Annotated, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
 from wetvia.answer.schema import AnswerPoint, AnswerStatus, AnswerV1, FollowUpStep
 from wetvia.llm import ChatMessage, LLMProvider
@@ -66,7 +66,7 @@ class _AnswerDraftPoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tekst: str = Field(min_length=1)
-    bron_ids: list[Annotated[str, Field(pattern=r"^\[[1-8]\]$")]] = Field(min_length=1)
+    bron_ids: list[str] = Field(min_length=1)
 
     _nonblank_text = field_validator("tekst")(_validate_nonblank)
 
@@ -102,6 +102,25 @@ class _AnswerDraft(BaseModel):
         if self.status == "beantwoord" and not self.punten:
             raise ValueError("een beantwoord antwoord moet minstens één bronpunt bevatten")
         return self
+
+
+def _draft_schema(source_labels: Sequence[str]) -> type[BaseModel]:
+    """Build a request schema whose citation enum contains only sent sources."""
+    if not source_labels:
+        raise ValueError("at least one source label is required")
+    label_type: Any = Literal.__getitem__(tuple(source_labels))
+    label_list_type: Any = list[label_type]
+    point_model = create_model(
+        "AnswerDraftPoint",
+        __base__=_AnswerDraftPoint,
+        bron_ids=(label_list_type, Field(min_length=1)),
+    )
+    point_list_type: Any = list[point_model]
+    return create_model(
+        "AnswerDraft",
+        __base__=_AnswerDraft,
+        punten=(point_list_type, Field()),
+    )
 
 
 def _validate_peildatum(value: date | str) -> date:
@@ -166,14 +185,16 @@ class AnswerPipeline:
             return _uncertain_without_sources(requested_date)
 
         messages = self._messages(vraag.strip(), requested_date, source_context)
+        schema = _draft_schema(tuple(label_to_source))
         draft = await self._provider.chat(
             messages,
-            _AnswerDraft,
+            schema,
             False,
             ANSWER_TEMPERATURE,
         )
-        if not isinstance(draft, _AnswerDraft):
+        if not isinstance(draft, schema):
             raise TypeError("LLMProvider returned a value outside the structured answer schema")
+        draft = cast(_AnswerDraft, draft)
         if draft.peildatum != requested_date:
             actual_date = draft.peildatum.isoformat()
             expected_date = requested_date.isoformat()
