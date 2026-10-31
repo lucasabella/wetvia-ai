@@ -5,6 +5,7 @@ from wetvia.retrieval.ports import (
     LegalStatus,
     Retriever,
     ScoredChunk,
+    SearchMode,
     SourceDocument,
     SourceMetadata,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "LegalStatus",
     "Retriever",
     "ScoredChunk",
+    "SearchMode",
     "SourceDocument",
     "SourceMetadata",
 ]

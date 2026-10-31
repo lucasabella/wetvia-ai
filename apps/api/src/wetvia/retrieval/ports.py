@@ -9,6 +9,7 @@ from uuid import UUID
 
 LegalStatus = Literal["geldend", "toekomstig", "vervallen"]
 ArticleStatus = Literal["geldend", "vervallen"]
+SearchMode = Literal["fts", "vector", "hybrid"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +42,7 @@ class SourceDocument:
 
 @dataclass(frozen=True, slots=True)
 class ScoredChunk:
-    """One source document with its fused retrieval score."""
+    """One source document with its mode-specific retrieval score."""
 
     source: SourceDocument
     score: float
@@ -57,6 +58,7 @@ class Retriever(Protocol):
         k: int = 8,
         *,
         include_future: bool = False,
+        mode: SearchMode = "hybrid",
     ) -> list[ScoredChunk]:
         """Return up to ``k`` relevant, date-valid source chunks."""
 
@@ -74,6 +76,7 @@ __all__ = [
     "LegalStatus",
     "Retriever",
     "ScoredChunk",
+    "SearchMode",
     "SourceDocument",
     "SourceMetadata",
 ]

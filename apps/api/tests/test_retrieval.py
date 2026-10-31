@@ -80,7 +80,21 @@ def test_fake_retriever_supports_search_and_source_lookup() -> None:
 
         assert results == [ScoredChunk(source, score=0.5)]
         assert found == source
-        assert retriever.search_calls == [("height", date(2026, 10, 31), 4, False)]
+        assert retriever.search_calls == [("height", date(2026, 10, 31), 4, False, "hybrid")]
         assert retriever.source_calls == [(source.chunk_id, None)]
+
+    asyncio.run(exercise())
+
+
+def test_fake_retriever_can_return_results_by_search_mode() -> None:
+    source = _source()
+    fts = ScoredChunk(source, score=0.25)
+    vector = ScoredChunk(source, score=0.5)
+    retriever = FakeRetriever(results_by_mode={"fts": [fts], "vector": [vector]})
+
+    async def exercise() -> None:
+        assert await retriever.search("query", date(2026, 10, 31), mode="fts") == [fts]
+        assert await retriever.search("query", date(2026, 10, 31), mode="vector") == [vector]
+        assert await retriever.search("query", date(2026, 10, 31)) == []
 
     asyncio.run(exercise())

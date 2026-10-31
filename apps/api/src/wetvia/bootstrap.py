@@ -1,7 +1,9 @@
 """Composition root. This is the only module that constructs ``Settings``."""
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from threading import Lock
 
@@ -20,6 +22,16 @@ from wetvia.llm.adapters.ollama import OllamaProvider
 from wetvia.llm.adapters.openai_compat import OpenAICompatProvider
 from wetvia.llm.ports import LLMProvider
 from wetvia.retrieval.adapters.pg import PgHybridRetriever
+from wetvia.retrieval.ports import Retriever
+
+
+@dataclass(frozen=True, slots=True)
+class RetrieverRuntime:
+    """Public retrieval composition and embedding-space identity for consumers."""
+
+    retriever: Retriever
+    model_id: str
+    dimension: int
 
 
 class _LazyEmbedder:
@@ -83,6 +95,29 @@ def get_ollama_provider(
         keep_alive=keep_alive,
         think=think,
     )
+
+
+@asynccontextmanager
+async def open_retriever(settings: Settings | None = None) -> AsyncIterator[RetrieverRuntime]:
+    """Compose a date-aware retriever and dispose its database engine on exit.
+
+    Evaluation and other in-process consumers use this public composition API
+    instead of importing the PostgreSQL adapter or reading settings directly.
+    """
+    loaded = settings if settings is not None else Settings()
+    engine = create_db_engine(loaded.database_url)
+    try:
+        sessions = create_session_factory(engine)
+        yield RetrieverRuntime(
+            retriever=PgHybridRetriever(
+                sessions,
+                _LazyEmbedder(loaded.embedding_model, loaded.embedding_dimension),
+            ),
+            model_id=loaded.embedding_model,
+            dimension=loaded.embedding_dimension,
+        )
+    finally:
+        await engine.dispose()
 
 
 def build_app(settings: Settings | None = None) -> FastAPI:

@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 wetvia-bench = "wetvia_eval.bench:main"
+wetvia-eval = "wetvia_eval.retrieval_eval:main"
 
 [dependency-groups]
 dev = [

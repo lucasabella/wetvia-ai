@@ -74,7 +74,7 @@ def test_search_endpoint_serializes_source_metadata_and_forwards_options() -> No
     assert body["results"][0]["source"]["metadata"]["artikel"] == "test-article"
     assert body["results"][0]["source"]["tekst"] == source.tekst
     assert body["results"][0]["score"] == 0.042
-    assert retriever.search_calls == [("hoogte dakkapel", _PEILDATUM, 3, True)]
+    assert retriever.search_calls == [("hoogte dakkapel", _PEILDATUM, 3, True, "hybrid")]
 
 
 def test_source_endpoint_serializes_document_and_returns_404_for_unknown_id() -> None:
