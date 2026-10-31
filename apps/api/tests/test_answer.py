@@ -165,6 +165,85 @@ def test_pipeline_searches_hybrid_at_requested_date_and_maps_labels_to_uuids() -
     assert label_constraint.get("enum", [label_constraint.get("const")]) == ["[1]"]
 
 
+def test_pipeline_reports_included_sources_before_provider_and_adds_bounded_history() -> None:
+    source = _source()
+    pipeline, retriever, provider = _pipeline([source], [_reply()])
+    emitted: list[tuple[str, UUID]] = []
+
+    async def on_sources(sources) -> None:
+        assert provider.calls == []
+        emitted.extend((item.label, item.source.chunk_id) for item in sources)
+
+    history = [
+        {"role": "user", "content": "Earlier synthetic question."},
+        {"role": "assistant", "content": "Earlier synthetic answer."},
+    ]
+    answer = asyncio.run(
+        pipeline.answer(
+            "current synthetic question",
+            date(2026, 10, 31),
+            history=history,
+            on_sources=on_sources,
+        )
+    )
+
+    messages = provider.calls[0][0]
+    assert answer.punten[0].bron_ids == [source.chunk_id]
+    assert emitted == [("[1]", source.chunk_id)]
+    assert retriever.search_calls == [
+        ("current synthetic question", date(2026, 10, 31), 8, False, "hybrid")
+    ]
+    assert [message["role"] for message in messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert messages[1]["content"] == "Earlier synthetic question."
+    assert messages[2]["content"] == "Earlier synthetic answer."
+    assert "Eerdere gebruikers- en assistentberichten" in messages[0]["content"]
+
+
+def test_history_budget_keeps_the_tail_of_the_most_recent_message() -> None:
+    source = _source()
+    pipeline, _retriever, provider = _pipeline([source], [_reply()])
+    long_message = "begin " + ("synthetic-tail " * 1200) + "END"
+
+    asyncio.run(
+        pipeline.answer(
+            "current synthetic question",
+            date(2026, 10, 31),
+            history=[{"role": "assistant", "content": long_message}],
+        )
+    )
+
+    bounded = provider.calls[0][0][1]["content"]
+    assert len(bounded) <= 8000
+    assert bounded.endswith("END")
+
+
+def test_history_message_limit_keeps_the_latest_turns_in_order() -> None:
+    source = _source()
+    pipeline, _retriever, provider = _pipeline([source], [_reply()])
+    history = [
+        {"role": "user" if index % 2 == 0 else "assistant", "content": f"turn-{index}"}
+        for index in range(13)
+    ]
+
+    asyncio.run(
+        pipeline.answer(
+            "current synthetic question",
+            date(2026, 10, 31),
+            history=history,
+        )
+    )
+
+    messages = provider.calls[0][0]
+    assert len(messages) == 14  # system + 12 bounded turns + current prompt
+    assert messages[1]["content"] == "turn-1"
+    assert messages[-2]["content"] == "turn-12"
+
+
 def test_invalid_input_date_and_model_date_are_rejected() -> None:
     pipeline, retriever, _provider = _pipeline([_source()], [_reply()])
 

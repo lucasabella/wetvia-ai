@@ -86,7 +86,30 @@ provider. The packaged Dutch prompt is `wetvia.answer.prompts/answer_nl.md`.
 Source context is limited to 8,000 budget units. Bootstrap currently injects a
 UTF-8 byte-length upper bound, which may truncate earlier than the model's real
 tokenizer; it is not reported as an exact token count. Deployments can inject a
-counter for their generator tokenizer. No chat HTTP route is wired yet.
+counter for their generator tokenizer.
+
+## SSE chat API
+
+`POST /api/chat` accepts `messages`, an optional `peildatum`, and an optional
+`mode` (`local` or `cloud`). Messages may have only `user` and `assistant`
+roles; the final message must be a user turn. A caller cannot provide a system
+message. The endpoint uses the provider configured by bootstrap. An explicit
+mode that differs from the configured provider returns HTTP 422; the request
+never switches providers.
+
+The response is `text/event-stream`. It sends a `sources` event containing only
+the sources that fit in the prompt, with their actual `[1]`–`[8]` labels, before
+generation starts. The next event is `answer` with the verified answer
+contract, including server-only `verifier_notes`; those notes are not part of
+the model's output schema. A post-start failure sends a generic `error` event
+followed by exactly one `done` event. Empty retrieval sends an empty `sources`
+event and a deterministic uncertain answer without calling the model. The
+route does not stream unverified text or log question content.
+
+Prior turns are bounded to the latest 12 messages and 8,000 characters in
+total. If the newest turn is truncated, its tail is retained. Prior assistant
+messages are conversation context only; retrieved source chunks remain the
+only evidence for legal claims. The endpoint currently emits no `delta` events.
 
 Lagen, van hoog naar laag: `bootstrap`, `api` | `cli`, `answer` | `dossier` | `documents`, `retrieval` | `ingest` | `citations` | `rules` | `llm`, `embeddings` | `db`, `core`. Elke module heeft een `AGENTS.md`.
 

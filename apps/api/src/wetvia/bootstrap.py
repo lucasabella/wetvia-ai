@@ -13,6 +13,7 @@ from nl_wetten_ingest import BwbSRUClient
 from wetvia.answer import AnswerPipeline, Utf8ByteUpperBoundCounter
 from wetvia.api import create_app
 from wetvia.api.deps import HealthContext
+from wetvia.api.schemas.chat import ChatMode
 from wetvia.cli import build_cli
 from wetvia.config import Settings
 from wetvia.db import create_db_engine, create_session_factory, database_status
@@ -142,15 +143,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         _LazyEmbedder(loaded.embedding_model, loaded.embedding_dimension),
     )
     provider = get_provider(loaded)
-    app = create_app(context, retriever=retriever, shutdown=shutdown)
-    app.state.session_factory = sessions
-    app.state.llm = provider
-    app.state.answer_pipeline = AnswerPipeline(
+    answer_pipeline = AnswerPipeline(
         retriever,
         provider,
         token_counter=Utf8ByteUpperBoundCounter(),
         abstention_tau=loaded.answer_abstention_tau,
     )
+    chat_mode: ChatMode = "local" if loaded.llm_provider == "ollama" else "cloud"
+    app = create_app(
+        context,
+        retriever=retriever,
+        answer_pipeline=answer_pipeline,
+        chat_mode=chat_mode,
+        shutdown=shutdown,
+    )
+    app.state.session_factory = sessions
+    app.state.llm = provider
     return app
 
 
