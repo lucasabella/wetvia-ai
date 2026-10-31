@@ -304,6 +304,8 @@ class AnswerPipeline:
         elif not verification.removed_count and status != "beantwoord":
             caveats = []
             followups = []
+            if not verified_points:
+                summary = _UNCERTAIN_SUMMARY if status == "onzeker" else _OUT_OF_SCOPE_SUMMARY
 
         return VerifiedAnswer(
             status=status,
@@ -479,6 +481,7 @@ def _summary_from_verified_points(points: Sequence[AnswerPoint]) -> str:
 _UNCERTAIN_SUMMARY = (
     "Ik kan deze vraag niet met voldoende zekerheid beantwoorden op basis van de gevonden bronnen."
 )
+_OUT_OF_SCOPE_SUMMARY = "Deze vraag valt buiten de reikwijdte van Wetvia."
 
 
 __all__ = [

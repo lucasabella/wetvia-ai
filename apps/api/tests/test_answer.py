@@ -276,12 +276,26 @@ def test_removed_points_clear_generated_caveats_and_followups() -> None:
     assert answer.vervolgstappen == []
 
 
-def test_model_abstention_clears_unverified_caveats_and_followups() -> None:
+@pytest.mark.parametrize(
+    ("status", "expected_summary"),
+    [
+        (
+            "onzeker",
+            "Ik kan deze vraag niet met voldoende zekerheid beantwoorden "
+            "op basis van de gevonden bronnen.",
+        ),
+        ("buiten_scope", "Deze vraag valt buiten de reikwijdte van Wetvia."),
+    ],
+)
+def test_empty_model_abstention_uses_deterministic_summary_and_clears_fields(
+    status: str,
+    expected_summary: str,
+) -> None:
     source = _source()
     reply = json.dumps(
         {
-            "status": "onzeker",
-            "samenvatting": "Synthetic uncertain answer.",
+            "status": status,
+            "samenvatting": "Synthetic summary claims that 3 woningen are allowed.",
             "punten": [],
             "voorbehouden": ["Synthetic caveat mentions 3 woningen."],
             "vervolgstappen": [
@@ -297,7 +311,8 @@ def test_model_abstention_clears_unverified_caveats_and_followups() -> None:
 
     answer = asyncio.run(pipeline.answer("synthetic question", date(2026, 10, 31)))
 
-    assert answer.status == "onzeker"
+    assert answer.status == status
+    assert answer.samenvatting == expected_summary
     assert answer.voorbehouden == []
     assert answer.vervolgstappen == []
 
