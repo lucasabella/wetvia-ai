@@ -44,6 +44,28 @@ jobs:
       - name: Sync
         run: uv sync --locked --all-packages --all-groups
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.4
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace packages
+        run: pnpm install --frozen-lockfile
+
+      - name: Check generated OpenAPI and client types
+        run: pnpm --filter @wetvia/api-client check:generated
+
+      - name: Typecheck and test API client
+        run: |
+          pnpm --filter @wetvia/api-client typecheck
+          pnpm --filter @wetvia/api-client test
+
       - name: Enable pgvector
         working-directory: apps/api
         run: uv run python -c "import os; from sqlalchemy import create_engine, text; engine = create_engine(os.environ['DATABASE_URL']); conn = engine.connect(); conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector')); conn.commit()"
@@ -65,12 +87,6 @@ jobs:
       - name: Pytest
         working-directory: apps/api
         run: uv run pytest
-
-      # --- #39 OpenAPI-check (nog niet) ---
-      # packages/api-client/openapi.json bestaat nog niet.
-      # Zodra #39 die spec toevoegt: genereer de spec opnieuw vanuit de
-      # app-factory (geen server, geen database) en faal bij een diff.
-      # Die stap hoort in deze api-job, niet in een aparte workflow.
 
   nl-wetten-ingest:
     name: nl-wetten-ingest

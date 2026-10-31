@@ -7,7 +7,7 @@
 
 | Job | Wat |
 | --- | --- |
-| `api` | `uv sync --locked`, ruff, mypy, `uv run lint-imports`, pytest. Postgres 16 + pgvector als service; de stap ervoor zet `CREATE EXTENSION vector` |
+| `api` | `uv sync --locked`, generated OpenAPI/client diff check with pnpm, client typecheck/tests, ruff, mypy, `uv run lint-imports`, pytest. Postgres 16 + pgvector als service; the exporter itself uses no database or model |
 | `nl-wetten-ingest` | `uv sync --locked`, ruff, mypy, pytest. Eigen job, niet meegenomen in `api` |
 | `web` | `pnpm install --frozen-lockfile`, `pnpm check`, `pnpm lint`, `pnpm format:check`, `pnpm test` (vitest) |
 | `eval` | `uv sync --locked`, ruff, mypy, pytest in `eval/`. Geen Ollama en geen modelgewichten |
@@ -16,6 +16,10 @@ uv en pnpm gebruiken de Actions-cache.
 
 `eval/` is uv-member `wetvia-eval` en heeft een eigen job. De modelbenchmark draait niet in CI: daar is geen GPU en er zijn nog geen eval-vragen.
 
-## #39 OpenAPI-check (nog niet)
+## OpenAPI-check
 
-`packages/api-client/openapi.json` bestaat nog niet. De plek staat in de `api`-job van `ci.yml`, gemarkeerd met `#39`. Zodra #39 de spec toevoegt: genereer die opnieuw vanuit de app-factory (geen server, geen database) en faal bij een diff. Geen aparte workflow.
+De `api`-job gebruikt Node/pnpm om `pnpm --filter @wetvia/api-client
+check:generated` uit te voeren. Dat script exporteert de spec vanuit de
+app-factory, genereert de TypeScript-schema's en faalt bij een diff. De exporter
+gebruikt een inert health-context; er is geen server, databaseverbinding of
+modelinitialisatie nodig. Dezelfde job typecheckt en test de client.

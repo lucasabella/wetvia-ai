@@ -1,0 +1,29 @@
+{
+  "name": "@wetvia/api-client",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "export:openapi": "cd ../../apps/api && uv run python scripts/export_openapi.py --output ../../packages/api-client/openapi.json",
+    "generate:types": "openapi-typescript openapi.json -o src/schema.d.ts",
+    "generate": "pnpm run export:openapi && pnpm run generate:types",
+    "check:generated": "pnpm run generate && git diff --exit-code -- openapi.json src/schema.d.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

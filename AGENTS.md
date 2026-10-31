@@ -21,7 +21,7 @@ docker compose up -d db
 
 `docker compose up` start alleen `db`. `api` en `web` hebben een profiel zolang hun Dockerfile er niet is. `worker` heeft profiel `ingest`. `ollama` heeft profiel `gpu-linux`.
 
-CI staat in `.github/workflows/ci.yml`: aparte jobs voor `api` (inclusief `uv run lint-imports` en Postgres + pgvector), `nl-wetten-ingest`, `web` en `eval`. De OpenAPI-check van #39 is daar gemarkeerd en nog niet actief. De modelbenchmark draait niet in CI.
+CI staat in `.github/workflows/ci.yml`: aparte jobs voor `api` (inclusief OpenAPI/client-generatie en diff-check, `uv run lint-imports` en Postgres + pgvector), `nl-wetten-ingest`, `web` en `eval`. De OpenAPI-export start geen database of model. De modelbenchmark draait niet in CI.
 
 ## Grenzen
 
@@ -31,7 +31,7 @@ CI staat in `.github/workflows/ci.yml`: aparte jobs voor `api` (inclusief `uv ru
 - Alleen `bootstrap.py` leest straks settings en kiest adapters. Andere modules krijgen dependencies geïnjecteerd en lezen de env niet zelf.
 - `packages/nl-wetten-ingest` is Apache-2.0 en importeert `wetvia` niet. Bronclients horen daar; opslag hoort in `wetvia.ingest`.
 - `training/` zit buiten de uv-workspace (torch/Unsloth tegen één gedeelde lockfile).
-- `packages/api-client` hoort niet in dit issue.
+- `packages/api-client` bevat de OpenAPI-export en gegenereerde TypeScript-client. Pas `openapi.json` en `src/schema.d.ts` niet met de hand aan; gebruik de generate- en check-scripts uit `CONTRIBUTING.md`.
 
 ## Verboden
 
