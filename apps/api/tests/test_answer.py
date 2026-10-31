@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from wetvia.answer import (
+    MAX_RETRIEVAL_QUERY_CHARS,
     AnswerDateMismatchError,
     AnswerPipeline,
     AnswerV1,
@@ -191,7 +192,13 @@ def test_pipeline_reports_included_sources_before_provider_and_adds_bounded_hist
     assert answer.punten[0].bron_ids == [source.chunk_id]
     assert emitted == [("[1]", source.chunk_id)]
     assert retriever.search_calls == [
-        ("current synthetic question", date(2026, 10, 31), 8, False, "hybrid")
+        (
+            "Earlier synthetic question.\ncurrent synthetic question",
+            date(2026, 10, 31),
+            8,
+            False,
+            "hybrid",
+        )
     ]
     assert [message["role"] for message in messages] == [
         "system",
@@ -242,6 +249,49 @@ def test_history_message_limit_keeps_the_latest_turns_in_order() -> None:
     assert len(messages) == 14  # system + 12 bounded turns + current prompt
     assert messages[1]["content"] == "turn-1"
     assert messages[-2]["content"] == "turn-12"
+
+
+def test_followup_retrieval_query_uses_prior_user_turn_not_assistant_assertions() -> None:
+    source = _source()
+    pipeline, retriever, _provider = _pipeline([source], [_reply()])
+
+    asyncio.run(
+        pipeline.answer(
+            "Hoe hoog mag die zijn?",
+            date(2026, 10, 31),
+            history=[
+                {"role": "user", "content": "Mag ik een dakkapel plaatsen?"},
+                {
+                    "role": "assistant",
+                    "content": "A prior unsupported assistant assertion about 9 meters.",
+                },
+            ],
+        )
+    )
+
+    query = retriever.search_calls[0][0]
+    assert "Mag ik een dakkapel plaatsen?" in query
+    assert "Hoe hoog mag die zijn?" in query
+    assert "unsupported assistant assertion" not in query
+    assert "9 meters" not in query
+
+
+def test_retrieval_query_is_capped_and_preserves_the_current_question() -> None:
+    source = _source()
+    pipeline, retriever, _provider = _pipeline([source], [_reply()])
+
+    asyncio.run(
+        pipeline.answer(
+            "current synthetic question",
+            date(2026, 10, 31),
+            history=[{"role": "user", "content": "prior " * 5000}],
+        )
+    )
+
+    query = retriever.search_calls[0][0]
+    assert len(query) <= MAX_RETRIEVAL_QUERY_CHARS
+    assert query.endswith("current synthetic question")
+    assert "prior" in query
 
 
 def test_invalid_input_date_and_model_date_are_rejected() -> None:

@@ -27,6 +27,7 @@ MAX_SOURCE_TOKENS = 8000
 MAX_SOURCES = 8
 MAX_HISTORY_MESSAGES = 12
 MAX_HISTORY_CHARS = 8000
+MAX_RETRIEVAL_QUERY_CHARS = 4000
 ANSWER_TEMPERATURE = 0.2
 DEFAULT_ABSTENTION_TAU = 0.01
 ANSWER_SEARCH_MODE: Literal["hybrid"] = "hybrid"
@@ -211,9 +212,12 @@ class AnswerPipeline:
         requested_date = _validate_peildatum(peildatum)
         if not vraag.strip():
             raise ValueError("vraag mag niet leeg zijn")
+        if len(vraag.strip()) > MAX_RETRIEVAL_QUERY_CHARS:
+            raise ValueError(f"vraag mag maximaal {MAX_RETRIEVAL_QUERY_CHARS} tekens bevatten")
 
+        retrieval_query = _build_retrieval_query(vraag.strip(), history)
         retrieved = await self._retriever.search(
-            vraag.strip(),
+            retrieval_query,
             requested_date,
             k=MAX_SOURCES,
             include_future=False,
@@ -512,6 +516,30 @@ def _bound_history(history: Sequence[ChatMessage]) -> list[ChatMessage]:
     return list(reversed(selected_reversed))
 
 
+def _build_retrieval_query(vraag: str, history: Sequence[ChatMessage]) -> str:
+    """Add recent user turns as bounded retrieval context, never assistant claims."""
+    if len(vraag) > MAX_RETRIEVAL_QUERY_CHARS:
+        raise ValueError(f"vraag mag maximaal {MAX_RETRIEVAL_QUERY_CHARS} tekens bevatten")
+    remaining = MAX_RETRIEVAL_QUERY_CHARS - len(vraag)
+    selected_reversed: list[str] = []
+    for message in reversed(history[-MAX_HISTORY_MESSAGES:]):
+        if message["role"] != "user":
+            continue
+        content = message["content"].strip()
+        if not content:
+            continue
+        allowance = remaining - 1  # one newline before this turn/current question
+        if allowance <= 0:
+            break
+        if len(content) > allowance:
+            content = content[-allowance:]
+        selected_reversed.append(content)
+        remaining -= len(content) + 1
+        if remaining <= 0 or len(content) < len(message["content"].strip()):
+            break
+    return "\n".join((*reversed(selected_reversed), vraag))
+
+
 def _uncertain_without_sources(
     peildatum: date,
     *,
@@ -550,6 +578,7 @@ __all__ = [
     "DEFAULT_ABSTENTION_TAU",
     "MAX_HISTORY_CHARS",
     "MAX_HISTORY_MESSAGES",
+    "MAX_RETRIEVAL_QUERY_CHARS",
     "MAX_SOURCES",
     "MAX_SOURCE_TOKENS",
     "AnswerDateMismatchError",

@@ -109,7 +109,10 @@ route does not stream unverified text or log question content.
 Prior turns are bounded to the latest 12 messages and 8,000 characters in
 total. If the newest turn is truncated, its tail is retained. Prior assistant
 messages are conversation context only; retrieved source chunks remain the
-only evidence for legal claims. The endpoint currently emits no `delta` events.
+only evidence for legal claims. Retrieval uses the current question plus recent
+prior user turns, bounded to 4,000 characters total; prior assistant messages
+are excluded from the retrieval query. The endpoint currently emits no `delta`
+events.
 
 Lagen, van hoog naar laag: `bootstrap`, `api` | `cli`, `answer` | `dossier` | `documents`, `retrieval` | `ingest` | `citations` | `rules` | `llm`, `embeddings` | `db`, `core`. Elke module heeft een `AGENTS.md`.
 
