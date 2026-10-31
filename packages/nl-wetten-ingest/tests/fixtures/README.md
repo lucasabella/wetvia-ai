@@ -21,3 +21,6 @@ Page files are ordered exactly as returned by the service:
 The saved pages exercise the SRU `nextRecordPosition` values used for
 pagination. Tests use `httpx.MockTransport`; CI makes no calls to the live
 endpoint.
+
+The full official XML `Toestand` files used by the BWB parser are documented
+separately in [`bwb_xml/README.md`](bwb_xml/README.md).
