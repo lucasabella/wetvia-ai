@@ -22,11 +22,14 @@ async def parse_with_one_retry[ModelT: BaseModel](
     schema: type[ModelT],
     messages: Sequence[ChatMessage],
     complete: Complete,
+    *,
+    parse_json: Callable[[str], ModelT] | None = None,
 ) -> ModelT:
+    parse = parse_json or schema.model_validate_json
     raw = await complete(messages)
     try:
-        return schema.model_validate_json(raw)
+        return parse(raw)
     except ValidationError as exc:
         corrected = (*messages, ChatMessage(role="user", content=validation_feedback(exc, raw)))
         second = await complete(corrected)
-        return schema.model_validate_json(second)
+        return parse(second)

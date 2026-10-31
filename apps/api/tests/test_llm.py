@@ -27,6 +27,18 @@ class Probe(BaseModel):
     value: str
 
 
+class DictionaryProbe(BaseModel):
+    values: dict[str, str]
+
+
+class DefaultedProbe(BaseModel):
+    label: str = "use the model default"
+
+
+class NestedDefaultedProbe(BaseModel):
+    item: DefaultedProbe
+
+
 def _settings(provider: LlmProvider, *, api_key: str | None = None) -> Settings:
     return Settings(
         _env_file=None,
@@ -254,6 +266,7 @@ def test_openai_falls_back_to_json_object_when_schema_is_rejected() -> None:
         assert instruction["role"] == "system"
         assert "JSON" in instruction["content"]
         assert "Probe" in instruction["content"]
+        assert '"additionalProperties":false' not in instruction["content"]
         assert route.calls[0].request.headers["authorization"] == "Bearer test-key"
         assert isinstance(result, Probe)
         assert result.value == "ok"
@@ -327,6 +340,72 @@ def test_strict_json_schema_closes_objects_and_defs() -> None:
     child = strict["$defs"]["Child"]
     assert child["additionalProperties"] is False
     assert child["required"] == ["name"]
+
+
+def test_strict_json_schema_makes_defaulted_fields_nullable() -> None:
+    strict = strict_json_schema(DefaultedProbe.model_json_schema())
+
+    assert isinstance(strict, dict)
+    assert strict["required"] == ["label"]
+    properties = strict["properties"]
+    assert isinstance(properties, dict)
+    assert properties["label"] == {
+        "anyOf": [
+            {"default": "use the model default", "title": "Label", "type": "string"},
+            {"type": "null"},
+        ]
+    }
+
+
+def test_openai_defaulted_null_uses_model_default() -> None:
+    async def run() -> DefaultedProbe:
+        with respx.mock:
+            route = respx.post("http://llm.test/v1/chat/completions").mock(
+                return_value=httpx.Response(200, json=_openai_body('{"label":null}'))
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            result = await provider.chat(_messages(), DefaultedProbe, False, 0.0)
+        body = json.loads(route.calls[0].request.content)
+        nullable = body["response_format"]["json_schema"]["schema"]["properties"]["label"]
+        assert {"type": "null"} in nullable["anyOf"]
+        assert isinstance(result, DefaultedProbe)
+        return result
+
+    assert asyncio.run(run()).label == "use the model default"
+
+
+def test_openai_defaulted_null_uses_nested_model_default() -> None:
+    async def run() -> NestedDefaultedProbe:
+        with respx.mock:
+            respx.post("http://llm.test/v1/chat/completions").mock(
+                return_value=httpx.Response(200, json=_openai_body('{"item":{"label":null}}'))
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            result = await provider.chat(_messages(), NestedDefaultedProbe, False, 0.0)
+        assert isinstance(result, NestedDefaultedProbe)
+        return result
+
+    assert asyncio.run(run()).item.label == "use the model default"
+
+
+def test_openai_dict_schema_uses_original_json_object_schema() -> None:
+    async def run() -> DictionaryProbe:
+        with respx.mock:
+            route = respx.post("http://llm.test/v1/chat/completions").mock(
+                return_value=httpx.Response(200, json=_openai_body('{"values":{"a":"one"}}'))
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            result = await provider.chat(_messages(), DictionaryProbe, False, 0.0)
+        body = json.loads(route.calls[0].request.content)
+        assert body["response_format"] == {"type": "json_object"}
+        instruction = body["messages"][0]["content"]
+        original_schema = DictionaryProbe.model_json_schema()
+        assert json.dumps(original_schema, separators=(",", ":")) in instruction
+        assert '"additionalProperties":false' not in instruction
+        assert isinstance(result, DictionaryProbe)
+        return result
+
+    assert asyncio.run(run()).values == {"a": "one"}
 
 
 def test_openai_next_chat_starts_with_json_schema_again() -> None:

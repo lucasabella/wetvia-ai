@@ -6,9 +6,10 @@ server rejects the schema (HTTP 400 or 422). Auth and rate-limit errors propagat
 
 import json
 from collections.abc import AsyncIterator, Sequence
-from typing import Any, cast
+from typing import Any, cast, get_args, get_origin
 
 from openai import APIStatusError, AsyncOpenAI
+from pydantic import BaseModel
 
 from wetvia.llm.parsing import parse_with_one_retry
 from wetvia.llm.ports import ChatMessage, ModelT
@@ -16,8 +17,38 @@ from wetvia.llm.ports import ChatMessage, ModelT
 _SCHEMA_UNSUPPORTED = frozenset({400, 422})
 
 
+def _strict_schema_compatible(schema: object) -> bool:
+    """Return whether strict mode can represent this schema without changing it."""
+    if isinstance(schema, list):
+        return all(_strict_schema_compatible(item) for item in schema)
+    if not isinstance(schema, dict):
+        return True
+    additional = schema.get("additionalProperties", False)
+    if additional is not False:
+        return False
+    return all(_strict_schema_compatible(value) for value in schema.values())
+
+
+def _allows_null(schema: object) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    if schema.get("type") == "null":
+        return True
+    for key in ("anyOf", "oneOf", "allOf"):
+        variants = schema.get(key)
+        if isinstance(variants, list) and any(_allows_null(item) for item in variants):
+            return True
+    return False
+
+
+def _nullable(schema: object) -> object:
+    if _allows_null(schema):
+        return schema
+    return {"anyOf": [schema, {"type": "null"}]}
+
+
 def strict_json_schema(schema: object) -> object:
-    """Close every object, including ``$defs``, so ``strict: true`` is accepted."""
+    """Normalize a strict-compatible schema without discarding dictionary semantics."""
     if isinstance(schema, list):
         return [strict_json_schema(item) for item in schema]
     if not isinstance(schema, dict):
@@ -26,12 +57,73 @@ def strict_json_schema(schema: object) -> object:
     properties = result.get("properties")
     is_object = result.get("type") == "object" or isinstance(properties, dict)
     if is_object:
+        original_required = schema.get("required", [])
+        required = set(original_required) if isinstance(original_required, list) else set()
         if isinstance(properties, dict):
+            result["properties"] = {
+                name: value if name in required else _nullable(value)
+                for name, value in properties.items()
+            }
             result["required"] = list(properties)
         elif "required" not in result:
             result["required"] = []
-        result["additionalProperties"] = False
+        # An object with additionalProperties true or a value schema represents
+        # arbitrary keys. OpenAI strict mode cannot encode that contract.
+        if result.get("additionalProperties", False) is False:
+            result["additionalProperties"] = False
     return result
+
+
+def _allows_none(annotation: object) -> bool:
+    if annotation is type(None):
+        return True
+    return any(_allows_none(arg) for arg in get_args(annotation))
+
+
+def _drop_defaulted_nulls(value: object, model: type[BaseModel]) -> object:
+    """Let strict-mode null placeholders take the model's declared default."""
+    if not isinstance(value, dict):
+        return value
+    for name, field in model.model_fields.items():
+        if name not in value:
+            continue
+        item = value[name]
+        annotation = field.annotation
+        if item is None and not field.is_required() and not _allows_none(annotation):
+            del value[name]
+            continue
+        value[name] = _drop_nested_defaulted_nulls(item, annotation)
+    return value
+
+
+def _drop_nested_defaulted_nulls(value: object, annotation: object) -> object:
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is not None and args:
+        if origin in (list, tuple, set, frozenset, Sequence):
+            item_type = args[0]
+            if isinstance(value, list):
+                return [_drop_nested_defaulted_nulls(item, item_type) for item in value]
+        elif origin is dict and len(args) == 2 and isinstance(value, dict):
+            return {key: _drop_nested_defaulted_nulls(item, args[1]) for key, item in value.items()}
+        # Optional and other unions can contain a BaseModel branch. Select that
+        # branch when the JSON value has object shape.
+        for arg in args:
+            if isinstance(arg, type) and issubclass(arg, BaseModel) and isinstance(value, dict):
+                return _drop_defaulted_nulls(value, arg)
+        return value
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return _drop_defaulted_nulls(value, annotation)
+    return value
+
+
+def _parse_openai_json(schema: type[ModelT], raw: str) -> ModelT:
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return schema.model_validate_json(raw)
+    normalized = _drop_defaulted_nulls(parsed, schema)
+    return schema.model_validate_json(json.dumps(normalized))
 
 
 class OpenAICompatProvider:
@@ -53,7 +145,8 @@ class OpenAICompatProvider:
         if schema is not None:
             if stream:
                 raise ValueError("schema and stream cannot be combined")
-            json_object_only = False
+            model_schema = schema.model_json_schema()
+            json_object_only = not _strict_schema_compatible(model_schema)
 
             async def complete(current: Sequence[ChatMessage]) -> str:
                 nonlocal json_object_only
@@ -68,7 +161,12 @@ class OpenAICompatProvider:
                     json_object_only = True
                     return await self._create_json_object(current, schema, temperature)
 
-            return await parse_with_one_retry(schema, messages, complete)
+            return await parse_with_one_retry(
+                schema,
+                messages,
+                complete,
+                parse_json=lambda raw: _parse_openai_json(schema, raw),
+            )
         if stream:
             return self._stream(messages, temperature)
         return await self._complete_text(messages, temperature)
@@ -90,7 +188,7 @@ class OpenAICompatProvider:
         temperature: float,
     ) -> str:
         encoded = json.dumps(
-            strict_json_schema(schema.model_json_schema()),
+            schema.model_json_schema(),
             separators=(",", ":"),
         )
         instruction = ChatMessage(
