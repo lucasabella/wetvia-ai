@@ -1,5 +1,7 @@
 """Settings stay out of logs and out of modules other than bootstrap."""
 
+import asyncio
+
 import pytest
 from pydantic import SecretStr, ValidationError
 
@@ -93,3 +95,34 @@ def test_build_app_injects_retriever_without_loading_embedding_model(
     assert app.state.retriever is not None
     assert app.state.retriever._embedder.model_id == "intfloat/multilingual-e5-large-instruct"
     assert app.state.retriever._embedder.dimension == 1024
+
+
+def test_open_retriever_exposes_public_runtime_and_closes_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import wetvia.bootstrap as bootstrap
+
+    class _Engine:
+        disposed = False
+
+        async def dispose(self) -> None:
+            self.disposed = True
+
+    engine = _Engine()
+    monkeypatch.setattr(bootstrap, "create_db_engine", lambda _: engine)
+    monkeypatch.setattr(bootstrap, "create_session_factory", lambda _: object())
+
+    def reject_model_load(*args: object, **kwargs: object) -> object:
+        raise AssertionError("bootstrap must keep the embedding adapter lazy")
+
+    monkeypatch.setattr(bootstrap, "SentenceTransformersEmbedder", reject_model_load)
+
+    async def exercise() -> None:
+        async with bootstrap.open_retriever(_settings()) as runtime:
+            assert runtime.model_id == "intfloat/multilingual-e5-large-instruct"
+            assert runtime.dimension == 1024
+            assert runtime.retriever is not None
+            assert not engine.disposed
+        assert engine.disposed
+
+    asyncio.run(exercise())

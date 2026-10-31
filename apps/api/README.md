@@ -68,6 +68,12 @@ The data schema requires PostgreSQL with pgvector. SQLite migration tests cover
 Alembic URL selection only; CI runs retrieval, migration, ingest, and embedding
 job integration tests on its PostgreSQL+pgvector service.
 
+The public `Retriever` port supports `fts`, `vector`, and `hybrid` search modes;
+`hybrid` remains the default used by the API. FTS-only evaluation skips query
+embedding and embedding-space validation, so lexical behavior can be measured
+without loading the embedding model. FTS and vector modes rank only their own
+candidate stream; the exact-article score boost applies only in hybrid mode.
+
 Lagen, van hoog naar laag: `bootstrap`, `api` | `cli`, `answer` | `dossier` | `documents`, `retrieval` | `ingest` | `citations` | `rules` | `llm`, `embeddings` | `db`, `core`. Elke module heeft een `AGENTS.md`.
 
 ```bash

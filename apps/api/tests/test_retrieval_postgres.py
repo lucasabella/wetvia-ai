@@ -15,7 +15,7 @@ from uuid import NAMESPACE_URL, uuid5
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from sqlalchemy.engine import make_url
 
 from nl_wetten_ingest import Chunk, Toestand, parse_bwb_xml
@@ -412,6 +412,26 @@ def test_pg_hybrid_search_uses_official_bbl_fixture_and_date_filters(
                 )
 
             retriever = PgHybridRetriever(sessions, embedder)
+            fts_only_embedder = _FixtureEmbedder()
+            fts_only_embedder.model_id = "fixture/not-the-stored-space"
+            fts_retriever = PgHybridRetriever(sessions, fts_only_embedder)
+            fts_only_results = await fts_retriever.search(
+                "nullvectorneedle",
+                _PEILDATUM,
+                k=8,
+                mode="fts",
+            )
+            assert fts_only_results[0].source.chunk_id == fts_only_id
+            assert fts_only_embedder.calls == []
+
+            vector_only_results = await retriever.search(
+                "nullvectorneedle",
+                _PEILDATUM,
+                k=60,
+                mode="vector",
+            )
+            assert fts_only_id not in {result.source.chunk_id for result in vector_only_results}
+
             results = await retriever.search(
                 "hoogte dakkapel vergunningvrij",
                 _PEILDATUM,
@@ -455,10 +475,52 @@ def test_pg_hybrid_search_uses_official_bbl_fixture_and_date_filters(
             assert article_results_by_id[collision_2290_id].score <= largest_unboosted_rrf
 
             qualified_query = "Synthetic regulation Alpha 2.29 alphaonlyneedle"
+            qualified_fts = await retriever.search(
+                qualified_query,
+                _PEILDATUM,
+                k=60,
+                mode="fts",
+            )
+            qualified_vector = await retriever.search(
+                qualified_query,
+                _PEILDATUM,
+                k=60,
+                mode="vector",
+            )
             qualified_results = await retriever.search(qualified_query, _PEILDATUM, k=60)
+            alpha_fts_result = next(
+                result for result in qualified_fts if result.source.chunk_id == alpha_id
+            )
+            alpha_vector_result = next(
+                result for result in qualified_vector if result.source.chunk_id == alpha_id
+            )
             qualified_ids = {result.source.chunk_id for result in qualified_results}
             assert alpha_id in qualified_ids
             assert beta_id not in qualified_ids
+            async with sessions() as session:
+                fts_score = (
+                    await session.execute(
+                        text(
+                            "SELECT ts_rank_cd(tsv, websearch_to_tsquery('dutch', :query)) "
+                            "FROM chunk WHERE id = :chunk_id"
+                        ),
+                        {"query": qualified_query, "chunk_id": alpha_id},
+                    )
+                ).scalar_one()
+                vector_score = (
+                    await session.execute(
+                        text(
+                            "SELECT 1.0 - (embedding <=> CAST(:query_vector AS vector)) "
+                            "FROM chunk WHERE id = :chunk_id"
+                        ),
+                        {
+                            "query_vector": str(_basis_vector(3)),
+                            "chunk_id": alpha_id,
+                        },
+                    )
+                ).scalar_one()
+            assert alpha_fts_result.score == pytest.approx(fts_score)
+            assert alpha_vector_result.score == pytest.approx(vector_score)
             alpha_result = next(
                 result for result in qualified_results if result.source.chunk_id == alpha_id
             )

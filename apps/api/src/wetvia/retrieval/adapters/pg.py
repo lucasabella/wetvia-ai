@@ -19,6 +19,7 @@ from wetvia.retrieval.ports import (
     ArticleStatus,
     LegalStatus,
     ScoredChunk,
+    SearchMode,
     SourceDocument,
     SourceMetadata,
 )
@@ -51,6 +52,7 @@ _SEARCH_SQL = text(
           AND chunk.artikel_status <> 'vervallen'
           AND (:include_future OR chunk.geldig_vanaf <= :peildatum)
           AND (chunk.geldig_tot IS NULL OR chunk.geldig_tot >= :peildatum)
+          AND :mode IN ('fts', 'hybrid')
         ORDER BY relevance DESC, chunk.id ASC
         LIMIT 30
     ),
@@ -67,6 +69,7 @@ _SEARCH_SQL = text(
           AND chunk.artikel_status <> 'vervallen'
           AND (:include_future OR chunk.geldig_vanaf <= :peildatum)
           AND (chunk.geldig_tot IS NULL OR chunk.geldig_tot >= :peildatum)
+          AND :mode IN ('vector', 'hybrid')
         ORDER BY distance ASC, chunk.id ASC
         LIMIT 30
     ),
@@ -111,14 +114,20 @@ _SEARCH_SQL = text(
                WHEN chunk.geldig_vanaf > :peildatum THEN 'toekomstig'
                ELSE 'geldend'
            END AS effective_status,
-           coalesce(fused_scores.rrf_score, 0.0)
-               + CASE
-                     WHEN lower(btrim(chunk.artikel)) = ANY(CAST(:article_refs AS text[]))
-                         THEN :article_boost
-                     ELSE 0.0
-                 END AS score
+           CASE
+               WHEN :mode = 'fts' THEN coalesce(fts_candidates.relevance, 0.0)
+               WHEN :mode = 'vector' THEN coalesce(1.0 - vector_candidates.distance, 0.0)
+               ELSE coalesce(fused_scores.rrf_score, 0.0)
+                    + CASE
+                          WHEN lower(btrim(chunk.artikel)) = ANY(CAST(:article_refs AS text[]))
+                              THEN :article_boost
+                          ELSE 0.0
+                      END
+           END AS score
     FROM candidate_ids
     JOIN chunk ON chunk.id = candidate_ids.id
+    LEFT JOIN fts_candidates ON fts_candidates.id = chunk.id
+    LEFT JOIN vector_candidates ON vector_candidates.id = chunk.id
     LEFT JOIN fused_scores ON fused_scores.id = chunk.id
     ORDER BY score DESC, chunk.id ASC
     LIMIT :limit
@@ -177,19 +186,24 @@ class PgHybridRetriever:
         k: int = 8,
         *,
         include_future: bool = False,
+        mode: SearchMode = "hybrid",
     ) -> list[ScoredChunk]:
         if not query.strip():
             raise ValueError("query must not be empty")
         if not 1 <= k <= 60:
             raise ValueError("k must be between 1 and 60")
+        if mode not in {"fts", "vector", "hybrid"}:
+            raise ValueError("mode must be one of: fts, vector, hybrid")
 
-        await self._validate_embedding_space()
-        formatted_query = format_query_input(self._query_instruction, query)
-        vectors = await asyncio.to_thread(self._embedder.embed, [formatted_query])
-        query_vector = _validate_query_vector(
-            vectors,
-            expected_dimension=self._embedder.dimension,
-        )
+        query_vector: list[float] | None = None
+        if mode != "fts":
+            await self._validate_embedding_space()
+            formatted_query = format_query_input(self._query_instruction, query)
+            vectors = await asyncio.to_thread(self._embedder.embed, [formatted_query])
+            query_vector = _validate_query_vector(
+                vectors,
+                expected_dimension=self._embedder.dimension,
+            )
         article_refs = list(extract_article_references(query))
         async with self._sessions() as session:
             rows = (
@@ -197,9 +211,10 @@ class PgHybridRetriever:
                     _SEARCH_SQL,
                     {
                         "query": query,
-                        "query_vector": str(query_vector),
+                        "query_vector": None if query_vector is None else str(query_vector),
                         "peildatum": peildatum,
                         "include_future": include_future,
+                        "mode": mode,
                         "article_refs": article_refs,
                         "article_boost": ARTICLE_MATCH_BOOST,
                         "rrf_k": RRF_K,
