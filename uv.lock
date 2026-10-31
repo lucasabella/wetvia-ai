@@ -843,6 +843,9 @@ wheels = [
 name = "nl-wetten-ingest"
 version = "0.0.0"
 source = { editable = "packages/nl-wetten-ingest" }
+dependencies = [
+    { name = "httpx" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -852,6 +855,7 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "httpx", specifier = ">=0.27" }]
 
 [package.metadata.requires-dev]
 dev = [

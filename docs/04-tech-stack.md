@@ -116,6 +116,8 @@ cd ../web && pnpm i && pnpm dev
 | DSO Toepasbare regels zoeken v2 | `https://service.omgevingswet.overheid.nl/publiek/toepasbare-regels/api/zoekinterface/v2/…` | CC BY 4.0 (vermelden: "Bron: DSO-LV") | gratis `x-api-key`, [aanvragen](https://developer.omgevingswet.overheid.nl/formulieren/api-key-aanvragen-0/) |
 | DSO Omgevingsdocument presenteren v8 (fase 2) | zie [API-register](https://developer.omgevingswet.overheid.nl/api-register/beschikbare-api-services/) | CC BY 4.0 | idem |
 
+`packages/nl-wetten-ingest` bevat de zelfstandige BWB SRU-client. `BwbSRUClient.search_toestanden(bwb_id)` haalt alle toestanden op met SRU-paginering; `changed_since(datum)` zoekt op `dcterms.modified>=`. De client levert uitsluitend officiële toestandmetadata zoals titel, geldigheidsperiode, `locatie_toestand` en wijzigingsdatum. Het pakket importeert `wetvia` niet; opslag en synchronisatie blijven in `wetvia.ingest`.
+
 > De DSO-key vervalt na een jaar zonder gebruik ([fair use](https://developer.omgevingswet.overheid.nl/services/fair-use-policy/)). Zet een ping in `drift-check.yml`.
 
 ## Kosten (per maand)

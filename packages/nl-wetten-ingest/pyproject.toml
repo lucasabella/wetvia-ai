@@ -1,12 +1,12 @@
 [project]
 name = "nl-wetten-ingest"
 version = "0.0.0"
-description = "Herbruikbaar pakket voor Nederlandse wet- en regelgevingsbronnen (BWB, CVDR, Tweede Kamer, DSO). Nog zonder clients."
+description = "Herbruikbaar pakket voor Nederlandse wet- en regelgevingsbronnen (BWB, CVDR, Tweede Kamer, DSO)."
 readme = "README.md"
 authors = [{ name = "Luca Sabella" }]
 requires-python = ">=3.12"
 license = "Apache-2.0"
-dependencies = []
+dependencies = ["httpx>=0.27"]
 
 [dependency-groups]
 dev = [
