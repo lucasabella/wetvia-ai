@@ -24,7 +24,7 @@ class StreamMetrics:
 
 
 class LLMProvider(Protocol):
-    """Chat completion. ``stream`` yields text only when ``schema`` is None."""
+    """Chat completion. Streamed schema responses are raw chunks, not prevalidated models."""
 
     async def chat(
         self,
@@ -35,5 +35,8 @@ class LLMProvider(Protocol):
         *,
         on_metrics: Callable[[StreamMetrics], None] | None = None,
     ) -> ModelT | str | AsyncIterator[str]:
-        """Return a validated model, the full text, or an async iterator of text chunks."""
+        """Return a model, full text, or raw chunks.
+
+        Callers validate the complete output of a schema-constrained stream.
+        """
         ...

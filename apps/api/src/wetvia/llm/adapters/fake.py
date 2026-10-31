@@ -24,12 +24,10 @@ class FakeProvider:
         on_metrics: Callable[[StreamMetrics], None] | None = None,
     ) -> ModelT | str | AsyncIterator[str]:
         self.calls.append((messages, schema, stream, temperature))
-        if schema is not None:
-            if stream:
-                raise ValueError("schema and stream cannot be combined")
-            return await parse_with_one_retry(schema, messages, self._next_reply)
         if stream:
             return self._iterate_chunks()
+        if schema is not None:
+            return await parse_with_one_retry(schema, messages, self._next_reply)
         return self._next_reply_sync()
 
     def _next_reply_sync(self) -> str:

@@ -190,9 +190,15 @@ class OpenAICompatProvider:
         *,
         on_metrics: Callable[[StreamMetrics], None] | None = None,
     ) -> ModelT | str | AsyncIterator[str]:
+        if stream and schema is not None:
+            if not _strict_schema_compatible(schema.model_json_schema()):
+                raise ValueError("schema is not supported for strict JSON-schema streaming")
+            return self._stream(
+                messages,
+                temperature,
+                self._json_schema_format(schema),
+            )
         if schema is not None:
-            if stream:
-                raise ValueError("schema and stream cannot be combined")
             model_schema = schema.model_json_schema()
             json_object_only = not _strict_schema_compatible(model_schema)
 
@@ -220,7 +226,7 @@ class OpenAICompatProvider:
                 ),
             )
         if stream:
-            return self._stream(messages, temperature)
+            return self._stream(messages, temperature, None)
         return await self._complete_text(messages, temperature)
 
     def _json_schema_format(self, schema: type[ModelT]) -> dict[str, object]:
@@ -285,16 +291,26 @@ class OpenAICompatProvider:
         self,
         messages: Sequence[ChatMessage],
         temperature: float,
+        response_format: dict[str, object] | None,
     ) -> AsyncIterator[str]:
         client = AsyncOpenAI(base_url=self._base_url, api_key=self._api_key, max_retries=0)
         payload = cast(Any, [dict(message) for message in messages])
         try:
-            stream = await client.chat.completions.create(
-                model=self._model,
-                messages=payload,
-                temperature=temperature,
-                stream=True,
-            )
+            if response_format is None:
+                stream = await client.chat.completions.create(
+                    model=self._model,
+                    messages=payload,
+                    temperature=temperature,
+                    stream=True,
+                )
+            else:
+                stream = await client.chat.completions.create(
+                    model=self._model,
+                    messages=payload,
+                    temperature=temperature,
+                    response_format=cast(Any, response_format),
+                    stream=True,
+                )
             async for chunk in stream:
                 choice = chunk.choices[0]
                 delta = choice.delta.content

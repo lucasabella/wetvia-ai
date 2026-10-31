@@ -2,7 +2,7 @@
 
 Benchmark- en eval-harness (`wetvia-eval`, AGPL-3.0-only). De vragen in `data/` zijn CC BY 4.0. Die set is nog leeg: geen bron, geen claim.
 
-`eval/bench_models.py` meet lokale Ollama-modellen (issue #6): tijd tot het eerste token, tokens/s, schema-validiteit op een dummy-`AnswerV1`, en piek-VRAM via `nvidia-smi` als dat er is. Chat loopt via de publieke `wetvia.llm`-port, aangemaakt door `wetvia.bootstrap.get_ollama_provider`. Alleen het ophalen van geïnstalleerde tags gebruikt `GET /api/tags` rechtstreeks; de benchmark heeft geen eigen Ollama-chatclient.
+`eval/bench_models.py` meet lokale Ollama-modellen (issue #6): tijd tot het eerste token, tokens/s, schema-validiteit op een dummy-`AnswerV1`, en piek-VRAM via `nvidia-smi` als dat er is. Chat loopt via de publieke `wetvia.llm`-port, aangemaakt door `wetvia.bootstrap.get_ollama_provider`; de `AnswerV1` JSON Schema wordt tijdens het streamen aan Ollama meegegeven. De volledige JSON wordt na de stream lokaal gevalideerd. Alleen het ophalen van geïnstalleerde tags gebruikt `GET /api/tags` rechtstreeks; de benchmark heeft geen eigen Ollama-chatclient.
 
 Er is nog geen `run.py`. Dat is de latere eval-runner, niet deze bake-off.
 

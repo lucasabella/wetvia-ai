@@ -18,7 +18,6 @@ from wetvia_eval.bench import (
     DEFAULT_MODELS,
     ModelResult,
     OllamaUnreachableError,
-    _with_answer_schema,
     main,
     model_is_listed,
     render_report,
@@ -72,8 +71,8 @@ class _FakeProvider:
         *,
         on_metrics: Callable[[StreamMetrics], None] | None = None,
     ) -> ModelT | str | AsyncIterator[str]:
-        if schema is not None or not stream or temperature != 0.0:
-            raise AssertionError("benchmark gebruikt alleen tekststreams zonder schema")
+        if schema is not AnswerV1 or not stream or temperature != 0.0:
+            raise AssertionError("benchmark moet AnswerV1 in een tekststream meesturen")
 
         async def chunks() -> AsyncIterator[str]:
             prompt = "\n".join(message["content"] for message in messages)
@@ -140,14 +139,6 @@ def test_prompt_uses_only_the_given_source_text() -> None:
     assert "Ping?" in prompt
     assert "Alleen deze tekst." in prompt
     assert "zet status op onzeker" in prompt
-
-
-def test_benchmark_prompt_includes_the_answer_schema() -> None:
-    question = BenchQuestion(id="x", vraag="Ping?", brontekst="Alleen deze tekst.")
-    prompt = _with_answer_schema(prompt_for(question))
-    assert '"title": "AnswerV1"' in prompt
-    assert "Ping?" in prompt
-    assert "Alleen deze tekst." in prompt
 
 
 def test_load_questions_rejects_a_missing_question(tmp_path: Path) -> None:

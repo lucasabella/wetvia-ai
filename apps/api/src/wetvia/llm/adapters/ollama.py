@@ -48,16 +48,14 @@ class OllamaProvider:
         *,
         on_metrics: Callable[[StreamMetrics], None] | None = None,
     ) -> ModelT | str | AsyncIterator[str]:
+        if stream:
+            return self._stream(messages, temperature, schema, on_metrics)
         if schema is not None:
-            if stream:
-                raise ValueError("schema and stream cannot be combined")
             return await parse_with_one_retry(
                 schema,
                 messages,
                 lambda current: self._complete(current, schema, temperature),
             )
-        if stream:
-            return self._stream(messages, temperature, on_metrics)
         return await self._complete_text(messages, temperature)
 
     async def _complete(
@@ -90,9 +88,13 @@ class OllamaProvider:
         self,
         messages: Sequence[ChatMessage],
         temperature: float,
+        schema: type[ModelT] | None,
         on_metrics: Callable[[StreamMetrics], None] | None,
     ) -> AsyncIterator[str]:
         payload = self._payload(messages, temperature, stream=True)
+        if schema is not None:
+            payload["format"] = schema.model_json_schema()
+            payload["think"] = False
         url = f"{self._base_url}/api/chat"
         async with (
             httpx.AsyncClient(timeout=_TIMEOUT) as client,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import time
 from collections.abc import AsyncIterator, Callable
@@ -29,11 +28,7 @@ DEFAULT_MODELS: tuple[str, ...] = (
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
 NUM_CTX = 16384
 _VRAM_SAMPLE_INTERVAL_SECONDS = 0.1
-_ANSWER_SCHEMA = json.dumps(AnswerV1.model_json_schema(), ensure_ascii=False)
-_WARMUP_PROMPT = (
-    "Antwoord alleen met JSON volgens dit JSON Schema:\n"
-    f"{_ANSWER_SCHEMA}\n\nVRAAG:\nping\n\nBRONNEN:\n(geen brontekst)\n"
-)
+_WARMUP_PROMPT = "Antwoord alleen met JSON volgens het opgegeven schema.\nVRAAG:\nping\n\n"
 
 
 @dataclass
@@ -115,8 +110,8 @@ def render_report(
         "",
         f"- Endpoint: `{base_url}` `/api/chat`, streaming.",
         f"- Context vast: `num_ctx={NUM_CTX}`. `think` staat uit (docs/02 §4).",
-        "- Schema: dummy `AnswerV1` uit docs/02 §4, lokaal in `wetvia_eval.schema`. "
-        "Het schema wordt in de prompt meegestuurd en na de stream lokaal gevalideerd. "
+        "- Schema: dummy `AnswerV1` uit docs/02 §4 wordt via de publieke provider "
+        "meegestuurd en na de stream lokaal gevalideerd. "
         "Het echte schema hoort later in `wetvia.answer`.",
         "- Client: `wetvia.bootstrap.get_ollama_provider` levert de publieke "
         "`wetvia.llm.LLMProvider`-API met de Ollama-adapter.",
@@ -219,10 +214,6 @@ def model_is_listed(available: set[str], wanted: str) -> bool:
         return True
     prefix = f"{wanted}:"
     return any(name.startswith(prefix) for name in available)
-
-
-def _with_answer_schema(prompt: str) -> str:
-    return f"Antwoord alleen met JSON volgens dit JSON Schema:\n{_ANSWER_SCHEMA}\n\n{prompt}"
 
 
 def list_models(base_url: str) -> set[str]:
@@ -332,7 +323,7 @@ def _run_model(
         try:
             measured = _measure_stream(
                 provider_factory(model, keep_alive),
-                _with_answer_schema(prompt_for(question)),
+                prompt_for(question),
             )
         except (httpx.HTTPError, RuntimeError, ValueError) as exc:
             items.append(
@@ -376,7 +367,7 @@ async def _collect_stream(provider: LLMProvider, prompt: str) -> StreamMeasureme
     started = time.perf_counter()
     stream = await provider.chat(
         [ChatMessage(role="user", content=prompt)],
-        schema=None,
+        schema=AnswerV1,
         stream=True,
         temperature=0.0,
         on_metrics=metrics.append,
