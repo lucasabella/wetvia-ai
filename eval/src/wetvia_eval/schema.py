@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Status = Literal["beantwoord", "onzeker", "buiten_scope"]
 
@@ -33,11 +33,20 @@ class AnswerV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Status
-    samenvatting: str = Field(max_length=2000)
+    samenvatting: str
     punten: list[AnswerPoint]
     voorbehouden: list[str]
     vervolgstappen: list[NextStep]
     peildatum: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+    @field_validator("samenvatting")
+    @classmethod
+    def samenvatting_max_80_woorden(cls, value: str) -> str:
+        """docs/02 §4: max 80 woorden, niet een tekenlimiet."""
+        if len(value.split()) > 80:
+            msg = "samenvatting mag maximaal 80 woorden zijn"
+            raise ValueError(msg)
+        return value
 
 
 def answer_json_schema() -> dict[str, object]:

@@ -28,7 +28,7 @@ uv run python eval/bench_models.py
 
 Andere tags: `uv run python eval/bench_models.py qwen3.5:9b`. Het rapport komt in `eval/reports/bench-<datum>.md`. Een sjabloon zonder cijfers staat in `eval/reports/bench-template.md`.
 
-Context staat vast op `num_ctx=16384` en `think` staat uit.
+Context staat vast op `num_ctx=16384` en `think` staat uit. Per model gaat er eerst een warm-up-call uit die niet meetelt. De laatste vraag stuurt `keep_alive: 0` zodat Ollama het model ontladt. Schema-validiteit telt alleen antwoorden; HTTP-fouten staan apart. Valt alles weg, dan is de status `mislukt`.
 
 ### RTX 3070 (8 GB)
 

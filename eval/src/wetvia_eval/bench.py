@@ -27,6 +27,9 @@ DEFAULT_MODELS: tuple[str, ...] = (
     "ministral-3:8b",
 )
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
+_WARMUP_PROMPT = (
+    "Antwoord alleen met JSON volgens het schema.\nVRAAG:\nping\n\nBRONNEN:\n(geen brontekst)\n"
+)
 
 
 @dataclass
@@ -46,10 +49,6 @@ class ModelResult:
     items: list[ItemResult] = field(default_factory=list)
     peak_vram_mib: int | None = None
 
-    @property
-    def measured(self) -> bool:
-        return self.status == "gemeten" and bool(self.items)
-
 
 def mean(values: list[float]) -> float | None:
     if not values:
@@ -57,11 +56,17 @@ def mean(values: list[float]) -> float | None:
     return sum(values) / len(values)
 
 
+def answered_items(items: list[ItemResult]) -> list[ItemResult]:
+    return [item for item in items if item.error is None]
+
+
 def schema_validity_percent(items: list[ItemResult]) -> float | None:
-    if not items:
+    """Alleen items met een antwoord. HTTP-fouten zitten niet in de noemer."""
+    answered = answered_items(items)
+    if not answered:
         return None
-    valid = sum(1 for item in items if item.schema_valid)
-    return 100.0 * valid / len(items)
+    valid = sum(1 for item in answered if item.schema_valid)
+    return 100.0 * valid / len(answered)
 
 
 def format_optional(value: float | None, digits: int) -> str:
@@ -99,10 +104,15 @@ def render_report(
         "- Tijd tot eerste token: wandklok tot het eerste niet-lege `message.content`.",
         "- tokens/s: `eval_count / (eval_duration / 1e9)` als Ollama beide velden in het "
         "laatste streamevent zet (`eval_duration` is nanoseconden).",
-        "- Schema-validiteit: aandeel antwoorden dat als `AnswerV1` valideert, zonder retry.",
-        "- Piek-VRAM: hoogste `nvidia-smi --query-gpu=memory.used` (MiB, hele GPU) "
-        "vlak voor en na elke vraag. Zonder `nvidia-smi`: niet beschikbaar. "
-        "Op een Mac (Metal) blijft die kolom leeg.",
+        "- Schema-validiteit: aandeel antwoorden dat als `AnswerV1` valideert, "
+        "alleen over items met een antwoord. HTTP-fouten staan apart en zitten "
+        "niet in die noemer. Zonder antwoord: niet gemeten.",
+        "- Piek-VRAM: hoogste `nvidia-smi --query-gpu=memory.used` (MiB, hele GPU, "
+        "dus ook andere processen) vlak voor en na elke gemeten vraag. "
+        "Zonder `nvidia-smi`: niet beschikbaar. Op een Mac (Metal) blijft die kolom leeg.",
+        "- Eerst een warm-up-call die niet meetelt, zodat laadtijd niet in de "
+        "eerste TTFT zit. De laatste vraag per model stuurt `keep_alive: 0` "
+        "zodat Ollama het model ontladt voor het volgende.",
         "- Een model dat niet in `GET /api/tags` staat, wordt overgeslagen.",
         "",
         "## Vragen",
@@ -142,11 +152,13 @@ def render_report(
             any_item = True
             ttft = format_optional(item.seconds_to_first_token, 3)
             rate = format_optional(item.tokens_per_second, 1)
+            if item.error:
+                lines.append(f"- `{result.model}` / `{item.question_id}`: HTTP-fout: {item.error}")
+                continue
             valid = "ja" if item.schema_valid else "nee"
-            error = item.error or ""
             lines.append(
                 f"- `{result.model}` / `{item.question_id}`: schema {valid}, "
-                f"eerste token {ttft} s, tokens/s {rate}. {error}".rstrip()
+                f"eerste token {ttft} s, tokens/s {rate}."
             )
     if not any_item:
         lines.append("Geen itemmetingen.")
@@ -155,10 +167,11 @@ def render_report(
 
 
 def _result_row(result: ModelResult) -> str:
-    if not result.measured:
+    if result.status != "gemeten":
+        vram = "niet beschikbaar" if result.peak_vram_mib is None else str(result.peak_vram_mib)
         return (
-            f"| {result.model} | {result.status} | 0 | niet gemeten | niet gemeten | "
-            f"niet gemeten | niet beschikbaar | {result.note} |"
+            f"| {result.model} | {result.status} | {len(result.items)} | "
+            f"niet gemeten | niet gemeten | niet gemeten | {vram} | {result.note} |"
         )
     ttft_values = [
         item.seconds_to_first_token
@@ -222,15 +235,23 @@ def _run_model(
     provider: OllamaProvider,
     vram_probe: Callable[[], int | None],
 ) -> ModelResult:
+    try:
+        provider.chat(model, _WARMUP_PROMPT)
+    except OllamaUnreachableError as exc:
+        return ModelResult(
+            model=model,
+            status="mislukt",
+            note=f"warm-up mislukt: {exc}",
+        )
     items: list[ItemResult] = []
     readings: list[int | None] = []
-    failures = 0
-    for question in questions:
+    last_index = len(questions) - 1
+    for index, question in enumerate(questions):
+        keep_alive = 0 if index == last_index else None
         readings.append(vram_probe())
         try:
-            measured = provider.chat(model, prompt_for(question))
+            measured = provider.chat(model, prompt_for(question), keep_alive=keep_alive)
         except OllamaUnreachableError as exc:
-            failures += 1
             items.append(
                 ItemResult(
                     question_id=question.id,
@@ -244,9 +265,19 @@ def _run_model(
             continue
         items.append(_item_from_measurement(question.id, measured))
         readings.append(vram_probe())
+    failures = sum(1 for item in items if item.error is not None)
+    answered = answered_items(items)
+    if not answered:
+        return ModelResult(
+            model=model,
+            status="mislukt",
+            note=f"{failures} HTTP-fout(en), geen antwoord",
+            items=items,
+            peak_vram_mib=peak_mib(readings),
+        )
     note = "gemeten"
     if failures:
-        note = f"{failures} item(s) faalden op de HTTP-call"
+        note = f"gemeten; {failures} HTTP-fout(en) niet in schema-%"
     return ModelResult(
         model=model,
         status="gemeten",

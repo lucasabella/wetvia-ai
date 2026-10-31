@@ -1,8 +1,8 @@
 """Minimale Ollama-client voor de benchmark.
 
-Issue #5 bouwt de echte LLMProvider-port in wetvia.llm. Deze klasse blijft
-bewust in eval, met dezelfde rol (chat + schema), zodat die port hem later
-kan vervangen. Geen cloud-endpoint en geen API-key.
+TODO(#5): vervang deze lokale OllamaProvider door de wetvia.llm-port uit
+issue #5 (PR #48) zodra die op main staat. Niet de port hier namaken.
+Geen cloud-endpoint en geen API-key.
 """
 
 from __future__ import annotations
@@ -30,6 +30,10 @@ class ChatMeasurement:
 
 class OllamaUnreachableError(Exception):
     pass
+
+
+class OllamaRequestError(OllamaUnreachableError):
+    """Stream met een error-veld, of een HTTP-fout tijdens chat."""
 
 
 def model_is_listed(available: set[str], wanted: str) -> bool:
@@ -81,8 +85,8 @@ class OllamaProvider:
                         names.add(name)
         return names
 
-    def chat(self, model: str, prompt: str) -> ChatMeasurement:
-        payload = {
+    def chat(self, model: str, prompt: str, *, keep_alive: int | None = None) -> ChatMeasurement:
+        payload: dict[str, object] = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "stream": True,
@@ -90,6 +94,8 @@ class OllamaProvider:
             "format": answer_json_schema(),
             "options": {"num_ctx": NUM_CTX},
         }
+        if keep_alive is not None:
+            payload["keep_alive"] = keep_alive
         started = self._clock()
         first_token_at: float | None = None
         parts: list[str] = []
@@ -104,6 +110,9 @@ class OllamaProvider:
                     event = _parse_event(line)
                     if event is None:
                         continue
+                    stream_error = _stream_error(event)
+                    if stream_error is not None:
+                        raise OllamaRequestError(stream_error)
                     content = _message_content(event)
                     if content and first_token_at is None:
                         first_token_at = self._clock()
@@ -135,6 +144,17 @@ def _parse_event(line: str) -> dict[str, object] | None:
         if isinstance(key, str):
             event[key] = value
     return event
+
+
+def _stream_error(event: dict[str, object]) -> str | None:
+    if "error" not in event:
+        return None
+    error = event["error"]
+    if error is None or error == "":
+        return None
+    if isinstance(error, str):
+        return error
+    return str(error)
 
 
 def _message_content(event: dict[str, object]) -> str:

@@ -19,13 +19,18 @@ def load_questions(path: Path) -> list[BenchQuestion]:
     if not path.is_file():
         return []
     questions: list[BenchQuestion] = []
+    seen_ids: set[str] = set()
     for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        parsed: object = json.loads(stripped)
+        try:
+            parsed: object = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            msg = f"{path}:{line_number}: ongeldige JSON ({exc.msg})"
+            raise ValueError(msg) from exc
         if not isinstance(parsed, dict):
-            msg = f"{path}:{line_number} is geen JSON-object"
+            msg = f"{path}:{line_number}: is geen JSON-object"
             raise ValueError(msg)
         vraag = parsed.get("vraag")
         item_id = parsed.get("id")
@@ -35,6 +40,10 @@ def load_questions(path: Path) -> list[BenchQuestion]:
         if not isinstance(item_id, str) or not item_id.strip():
             msg = f"{path}:{line_number} mist een niet-lege string 'id'"
             raise ValueError(msg)
+        if item_id in seen_ids:
+            msg = f"{path}:{line_number}: dubbele id {item_id!r}"
+            raise ValueError(msg)
+        seen_ids.add(item_id)
         brontekst = parsed.get("brontekst", "")
         if not isinstance(brontekst, str):
             msg = f"{path}:{line_number} veld 'brontekst' moet een string zijn"
