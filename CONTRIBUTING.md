@@ -76,3 +76,19 @@ De exporter gebruikt `create_app` met een inert health-check-context. Hij start
 geen server en roept `build_app`, databaseverbindingen, settings of modellen niet
 aan. `createWetviaClient({ baseUrl, fetch })` accepteert `fetch` uit bijvoorbeeld
 SvelteKit `load` voor requests binnen de gekozen runtime.
+
+Voor chat retourneert `streamChatEvents` direct `AsyncGenerator<ChatEvent>` en
+gebruikt de helper `openapi-fetch` met `parseAs: "stream"`, zodat SSE-frames
+incrementieel beschikbaar zijn. `ChatEvent` komt uit de gegenereerde schema's:
+
+```ts
+import { createWetviaClient, streamChatEvents } from "@wetvia/api-client";
+
+const client = createWetviaClient({ baseUrl, fetch });
+for await (const event of streamChatEvents(client, {
+  messages: [{ role: "user", content: "Mijn vraag" }],
+})) {
+  if (event.type === "sources") showSources(event.sources);
+  if (event.type === "answer") showAnswer(event.answer);
+}
+```
