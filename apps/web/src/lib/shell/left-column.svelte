@@ -1,12 +1,24 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
+  import type { ChatStore } from "$lib/features/chat/chat.svelte";
+  import ConversationHistoryPanel from "$lib/features/chat/conversation-history-panel.svelte";
+  import type { ConversationHistoryStore } from "$lib/features/chat/conversation-history.svelte";
   import DossierPanel from "$lib/features/dossier/dossier-panel.svelte";
   import SettingsPanel from "$lib/features/settings/settings-panel.svelte";
 
   let {
     showHistoryHeading = true,
     idPrefix = "",
-  }: { showHistoryHeading?: boolean; idPrefix?: string } = $props();
+    chat,
+    history,
+    onNavigate = () => undefined,
+  }: {
+    showHistoryHeading?: boolean;
+    idPrefix?: string;
+    chat: ChatStore;
+    history: ConversationHistoryStore;
+    onNavigate?: () => void;
+  } = $props();
 
   const historyHeadingId = $derived(`${idPrefix}geschiedenis-kop`);
 </script>
@@ -29,7 +41,8 @@
     >
       Geschiedenis
     </h2>
+    <ConversationHistoryPanel {chat} {history} {idPrefix} {onNavigate} />
     <DossierPanel {idPrefix} />
-    <SettingsPanel {idPrefix} />
+    <SettingsPanel {idPrefix} onClearAll={() => chat.clearAllConversations()} />
   </section>
 </div>

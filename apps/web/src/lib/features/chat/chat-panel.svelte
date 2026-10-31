@@ -132,10 +132,20 @@
     </div>
   {/if}
 
+  {#if chat.notice}
+    <p
+      class="mx-auto mt-2 w-full max-w-3xl text-sm text-destructive"
+      role="alert"
+    >
+      {chat.notice}
+    </p>
+  {/if}
+
   <form
     class="mx-auto mt-3 w-full max-w-3xl rounded-xl border border-border bg-card p-3 shadow-sm"
     onsubmit={submit}
     aria-label="Stel een vraag"
+    aria-busy={!chat.ready}
   >
     <label class="sr-only" for="vraag-invoer">Stel een vraag</label>
     <textarea
@@ -167,7 +177,7 @@
         <button
           type="submit"
           class="min-h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={chat.sending || !chat.draft.trim()}
+          disabled={!chat.ready || chat.sending || !chat.draft.trim()}
         >
           Verstuur
         </button>
