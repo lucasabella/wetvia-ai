@@ -1,6 +1,6 @@
 # Bijdragen aan Wetvia
 
-Wetvia is een monorepo: `apps/api` (FastAPI, AGPL-3.0-only), `apps/web` (frontend, AGPL-3.0-only; SvelteKit volgt), `packages/nl-wetten-ingest` (Apache-2.0) en `eval/` (de evaluatieset is CC BY 4.0).
+Wetvia is een monorepo: `apps/api` (FastAPI, AGPL-3.0-only), `apps/web` (frontend, AGPL-3.0-only; SvelteKit volgt), `packages/api-client` (gegenereerde OpenAPI/TypeScript-client, AGPL-3.0-only), `packages/nl-wetten-ingest` (Apache-2.0) en `eval/` (de evaluatieset is CC BY 4.0).
 
 Werk op een branch vanaf `main`. Push niet naar `main` en merge je eigen PR niet.
 
@@ -54,6 +54,41 @@ cd ../../eval && uv run ruff check && uv run ruff format --check && uv run mypy 
 cd .. && pnpm lint && pnpm check && pnpm test && pnpm format:check
 ```
 
-`uv run lint-imports` draait in de `api`-job van [`.github/workflows/ci.yml`](.github/workflows/ci.yml). De OpenAPI-diff-check komt met #39; de plek staat in die job.
+`uv run lint-imports` draait in de `api`-job van [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Die job voert ook de OpenAPI-export-, gegenereerde-types-, typecheck- en clienttests uit en faalt bij een diff.
 
 `pnpm test` draait vitest in `apps/web`. Python-tests zijn pytest in `apps/api`, `packages/nl-wetten-ingest` en `eval`. `training/` zit niet in de uv-workspace.
+
+## OpenAPI en TypeScript-client
+
+`packages/api-client/openapi.json` en `src/schema.d.ts` zijn gegenereerd; pas
+deze bestanden niet met de hand aan. Na wijzigingen aan API-routes of schemas:
+
+```bash
+uv sync --all-packages --all-groups
+pnpm install
+pnpm --filter @wetvia/api-client generate
+pnpm --filter @wetvia/api-client check:generated
+pnpm --filter @wetvia/api-client typecheck
+pnpm --filter @wetvia/api-client test
+```
+
+De exporter gebruikt `create_app` met een inert health-check-context. Hij start
+geen server en roept `build_app`, databaseverbindingen, settings of modellen niet
+aan. `createWetviaClient({ baseUrl, fetch })` accepteert `fetch` uit bijvoorbeeld
+SvelteKit `load` voor requests binnen de gekozen runtime.
+
+Voor chat retourneert `streamChatEvents` direct `AsyncGenerator<ChatEvent>` en
+gebruikt de helper `openapi-fetch` met `parseAs: "stream"`, zodat SSE-frames
+incrementieel beschikbaar zijn. `ChatEvent` komt uit de gegenereerde schema's:
+
+```ts
+import { createWetviaClient, streamChatEvents } from "@wetvia/api-client";
+
+const client = createWetviaClient({ baseUrl, fetch });
+for await (const event of streamChatEvents(client, {
+  messages: [{ role: "user", content: "Mijn vraag" }],
+})) {
+  if (event.type === "sources") showSources(event.sources);
+  if (event.type === "answer") showAnswer(event.answer);
+}
+```

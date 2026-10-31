@@ -73,10 +73,17 @@ wetvia-ai/
 │     └─ (api-client via @wetvia/api-client)
 ├─ packages/
 │  ├─ nl-wetten-ingest/           # Apache-2.0, kent wetvia niet
-│  └─ api-client/                 # openapi.json + gegenereerde TS-client (later)
+│  └─ api-client/                 # OpenAPI 3.1 + gegenereerde TS-client
 ├─ eval/                          # consumer van de publieke API
 └─ training/                      # eigen pyproject/venv, buiten de workspace
 ```
+
+De OpenAPI 3.1-spec en gegenereerde TypeScript-types staan in
+`packages/api-client`. Genereer ze met
+`pnpm --filter @wetvia/api-client generate`; de exporter gebruikt alleen de
+app-factory met een inert health-context, zonder server, databaseverbinding of
+modelinitialisatie. De clientfactory accepteert een `baseUrl` en een
+geïnjecteerde `fetch`, zodat SvelteKit de fetch van zijn runtime kan doorgeven.
 
 ## Lokale ontwikkelomgeving
 

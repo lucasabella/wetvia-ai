@@ -177,7 +177,7 @@ wetvia-ai/
 3. **`AGENTS.md`** in de root en per module. Daarnaast `docs/adr/0002-modulaire-monoliet.md`.
 4. **Ruff-config op één plek:** die staat nu dubbel in de root en in beide members. Laat de members `extend = "../../pyproject.toml"` gebruiken.
 5. **`training/` buiten de workspace** houden en dat in de README vastleggen.
-6. **Package-map voor de client:** `packages/api-client` (of `packages/*`) toevoegen aan `pnpm-workspace.yaml` zodra het client-issue start.
+6. **API-client:** `packages/api-client` staat in `pnpm-workspace.yaml`; het pakket bevat de gegenereerde OpenAPI 3.1-spec en TypeScript-types/client. `pnpm --filter @wetvia/api-client generate` werkt ze bij; CI faalt als de gegenereerde bestanden afwijken.
 
 ## Issues die moeten veranderen
 
