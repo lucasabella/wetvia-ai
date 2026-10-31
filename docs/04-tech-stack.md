@@ -88,6 +88,8 @@ docker compose up -d db         # alleen Postgres; api/web/worker/ollama hebben 
 docker compose exec db psql -U wetvia -c "select extversion from pg_extension where extname='vector'"
 cd apps/api && uv sync && uv run alembic upgrade head
 uv run wetvia ingest bwb --preset mvp      # CLI in src/wetvia/cli.py; logica in wetvia.ingest
+uv sync --all-packages --all-groups --extra embeddings # optionele lokale inference-dependency
+uv run wetvia embed --max-batches 100     # vult maximaal 100 batches NULL-vectoren
 uv run fastapi dev src/wetvia/bootstrap.py  # ASGI app; factory staat in api/app.py
 cd ../web && pnpm i && pnpm dev
 # worker, later: hetzelfde image, profiel ingest, commando `wetvia ingest sync && wetvia embed`
@@ -129,6 +131,19 @@ README](../apps/api/README.md#bwb-ingest) for command details.
 | DSO Omgevingsdocument presenteren v8 (fase 2) | zie [API-register](https://developer.omgevingswet.overheid.nl/api-register/beschikbare-api-services/) | CC BY 4.0 | idem |
 
 `packages/nl-wetten-ingest` bevat de zelfstandige BWB SRU-client. `BwbSRUClient.search_toestanden(bwb_id)` haalt alle toestanden op met SRU-paginering; `changed_since(datum)` zoekt op `dcterms.modified>=`. De client levert uitsluitend officiële toestandmetadata zoals titel, geldigheidsperiode, `locatie_toestand` en wijzigingsdatum. Het pakket importeert `wetvia` niet; opslag en synchronisatie blijven in `wetvia.ingest`.
+
+`wetvia embed` vult alleen nog lege `chunk.embedding`-waarden en verwerkt per
+run hoogstens het ingestelde aantal batches; een volgende run hervat met de
+overgebleven rijen. Sentence-transformers en het model laden pas wanneer het
+commando draait. De database bewaart één actieve model-ID en weigert vectors
+uit verschillende modelruimten te mengen. Bij een modelwissel op dezelfde
+dimensie: maak alle embeddings leeg, voer het commando met de nieuwe
+`EMBEDDING_MODEL` uit en bouw `ix_chunk_embedding_hnsw` opnieuw op. Een
+dimensiewijziging vereist een migratie die `chunk.embedding` naar `vector(N)`
+wijzigt en de HNSW-index opnieuw opbouwt; zet daarna alleen
+`EMBEDDING_DIMENSION=N` en het nieuwe `EMBEDDING_MODEL`. De runtime leest de
+breedte uit PostgreSQL en vereist daarvoor geen applicatiecode-wijziging. Er is
+geen modeldownload of inference-run in CI.
 
 > De DSO-key vervalt na een jaar zonder gebruik ([fair use](https://developer.omgevingswet.overheid.nl/services/fair-use-policy/)). Zet een ping in `drift-check.yml`.
 

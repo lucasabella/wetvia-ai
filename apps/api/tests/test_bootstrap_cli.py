@@ -12,6 +12,7 @@ def test_run_cli_composes_ingest_dependencies_without_constructing_llm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
+    embedding_job_factories = []
 
     class FakeEngine:
         async def dispose(self) -> None:
@@ -28,6 +29,10 @@ def test_run_cli_composes_ingest_dependencies_without_constructing_llm(
     class FakeCli:
         def __call__(self) -> None:
             events.append("cli")
+
+    class FakeEmbedder:
+        dimension = 1024
+        model_id = "stub/multilingual-e5"
 
     fake_engine = FakeEngine()
     monkeypatch.setattr(
@@ -49,7 +54,16 @@ def test_run_cli_composes_ingest_dependencies_without_constructing_llm(
     monkeypatch.setattr(
         bootstrap,
         "build_cli",
-        lambda service: events.append("build-cli") or FakeCli(),
+        lambda service, embedding_job_factory: (
+            events.append("build-cli")
+            or embedding_job_factories.append(embedding_job_factory)
+            or FakeCli()
+        ),
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "SentenceTransformersEmbedder",
+        lambda *args, **kwargs: events.append("model-load") or FakeEmbedder(),
     )
 
     def reject_llm(_: Settings) -> object:
@@ -68,3 +82,7 @@ def test_run_cli_composes_ingest_dependencies_without_constructing_llm(
         "source-exit",
         "dispose",
     ]
+    assert len(embedding_job_factories) == 1
+    assert "model-load" not in events
+    embedding_job_factories[0]()
+    assert events[-1] == "model-load"

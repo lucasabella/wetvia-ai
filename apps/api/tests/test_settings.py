@@ -47,6 +47,18 @@ def test_llm_provider_is_limited() -> None:
         )
 
 
+def test_embedding_settings_have_safe_vector_defaults_and_require_positive_values() -> None:
+    settings = _settings()
+
+    assert settings.embedding_model == "intfloat/multilingual-e5-large-instruct"
+    assert settings.embedding_dimension == 1024
+    assert settings.embedding_batch_size == 32
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, embedding_dimension=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, embedding_batch_size=0)
+
+
 def test_asgi_app_attribute_is_built_once() -> None:
     import wetvia.bootstrap as bootstrap
 

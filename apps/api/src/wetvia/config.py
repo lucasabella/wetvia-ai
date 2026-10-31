@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from wetvia.core import LlmProvider
@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     llm_model: str = "qwen3.5:9b"
     llm_api_key: SecretStr | None = None
     embedding_model: str = "intfloat/multilingual-e5-large-instruct"
+    embedding_dimension: int = Field(default=1024, gt=0)
+    embedding_batch_size: int = Field(default=32, gt=0)
 
     @field_validator("llm_api_key", mode="before")
     @classmethod

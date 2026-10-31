@@ -100,11 +100,12 @@ flowchart TD
 - **Eén chunk = één artikel** (of één lid bij lange artikelen > 600 tokens). Splits **nooit** midden in een opsomming, zoals de punten a-r van art. 2.29 Bbl. Een lange opsomming wordt per onderdeel opgeknipt, met de aanhef van het artikel als prefix.
 - Metadata per chunk: `bwb_id`, `regeling_titel`, `artikel`, `lid`, `onderdeel`, `kop` (hoofdstuk/afdeling/paragraaf-pad), `geldig_vanaf`, `geldig_tot`, `toestand_id`, `bron_url` (JCI-deeplink, bijv. `https://wetten.overheid.nl/jci1.3:c:BWBR0041297&artikel=2.29`, zelf gecontroleerd), `status` (`geldend` | `toekomstig` | `vervallen` | `voorstel`).
 - De tekst die wordt geëmbed = `"{regeling} | {kop-pad} | Artikel {nr} ({opschrift})\n{tekst}"`. Het pad helpt de retrieval enorm.
+- **Modelinvoer:** volgens de [modelkaart van multilingual-e5-large-instruct](https://huggingface.co/intfloat/multilingual-e5-large-instruct) krijgt documenttekst geen `passage:`-prefix. Queries gebruiken `Instruct: {task}\nQuery: {query}`. Issue #11 noemt tussen haakjes een passage-prefix; die parenthetical wijkt af van de modelkaart, dus de implementatie volgt de modelkaart.
 
 ### 3.2 Hybride retrieval
 
 1. `tsvector` met de config `dutch` (stemming) → top 30.
-2. pgvector (cosine, HNSW-index) met e5 `query:`-prefix → top 30.
+2. pgvector (cosine, HNSW-index) met de e5-queryvorm `Instruct: {task}\nQuery: {query}` → top 30.
 3. **Reciprocal Rank Fusion** (k = 60) → top 8.
 4. Filter (in SQL, vóór het rangschikken): `geldig_vanaf <= :peildatum AND (geldig_tot IS NULL OR geldig_tot >= :peildatum)`.
 5. Boost exacte artikelnummers ("2.29") als de vraag die noemt.

@@ -19,6 +19,9 @@ dependencies = [
     "uvicorn>=0.32",
 ]
 
+[project.optional-dependencies]
+embeddings = ["sentence-transformers>=5,<6"]
+
 [project.scripts]
 wetvia = "wetvia.bootstrap:run_cli"
 
