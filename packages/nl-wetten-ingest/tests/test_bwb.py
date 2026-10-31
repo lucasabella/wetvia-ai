@@ -269,6 +269,57 @@ def test_invalid_pagination_is_reported() -> None:
         client.search_toestanden("BWBR0041297")
 
 
+@pytest.mark.parametrize("next_position", ["5", "10"])
+def test_next_record_position_must_be_exactly_contiguous(next_position: str) -> None:
+    content = _fixture("bbl-page-1.xml").replace(
+        b"<nextRecordPosition>6</nextRecordPosition>",
+        f"<nextRecordPosition>{next_position}</nextRecordPosition>".encode(),
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=content, request=request)
+
+    with (
+        BwbSRUClient(transport=httpx.MockTransport(respond), maximum_records=5) as client,
+        pytest.raises(SRUProtocolError, match="slaat recordposities over of overlapt"),
+    ):
+        client.search_toestanden("BWBR0041297")
+
+
+def test_record_positions_must_be_contiguous_within_page() -> None:
+    content = _fixture("bbl-page-1.xml").replace(
+        b"<recordPosition>3</recordPosition>", b"<recordPosition>4</recordPosition>", 1
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=content, request=request)
+
+    with (
+        BwbSRUClient(transport=httpx.MockTransport(respond), maximum_records=5) as client,
+        pytest.raises(SRUProtocolError, match="recordPosition-waarden sluiten niet"),
+    ):
+        client.search_toestanden("BWBR0041297")
+
+
+def test_total_record_count_must_stay_stable_across_pages() -> None:
+    page_two = _fixture("bbl-page-2.xml").replace(
+        b"<numberOfRecords>11</numberOfRecords>", b"<numberOfRecords>12</numberOfRecords>"
+    )
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        filename = (
+            "bbl-page-1.xml" if request.url.params["startRecord"] == "1" else "bbl-page-2.xml"
+        )
+        content = page_two if filename == "bbl-page-2.xml" else _fixture(filename)
+        return httpx.Response(200, content=content, request=request)
+
+    with (
+        BwbSRUClient(transport=httpx.MockTransport(respond), maximum_records=5) as client,
+        pytest.raises(SRUProtocolError, match="numberOfRecords veranderde"),
+    ):
+        client.search_toestanden("BWBR0041297")
+
+
 def test_missing_pagination_marker_does_not_return_a_partial_result() -> None:
     content = _fixture("bbl-page-1.xml").replace(b"<nextRecordPosition>6</nextRecordPosition>", b"")
 

@@ -160,10 +160,27 @@ class BwbSRUClient:
         results: list[Toestand] = []
         start_record = 1
         visited_positions: set[int] = set()
+        expected_total: int | None = None
 
         while True:
             response = self._get_page(query, start_record)
-            page, next_record_position, total_records = _parse_sru_page(response.content)
+            page, record_positions, next_record_position, total_records = _parse_sru_page(
+                response.content
+            )
+            if expected_total is None:
+                expected_total = total_records
+            elif total_records != expected_total:
+                raise SRUProtocolError(
+                    "SRU numberOfRecords veranderde tijdens paginering "
+                    f"({expected_total} naar {total_records})"
+                )
+
+            expected_positions = tuple(range(start_record, start_record + len(page)))
+            if record_positions != expected_positions:
+                raise SRUProtocolError(
+                    "SRU recordPosition-waarden sluiten niet aaneengesloten aan op startRecord"
+                )
+
             if expected_bwb_id is not None:
                 unexpected = [item.bwb_id for item in page if item.bwb_id != expected_bwb_id]
                 if unexpected:
@@ -179,9 +196,18 @@ class BwbSRUClient:
                     raise SRUProtocolError(
                         "SRU-response mist nextRecordPosition voor volgende pagina"
                     )
+                if last_record > total_records:
+                    raise SRUProtocolError("SRU-response bevat records voorbij numberOfRecords")
                 break
             if next_record_position <= start_record or next_record_position in visited_positions:
                 raise SRUProtocolError("SRU-pagination gaf geen vooruitgang")
+            expected_next = start_record + len(page)
+            if next_record_position != expected_next:
+                raise SRUProtocolError(
+                    "SRU nextRecordPosition slaat recordposities over of overlapt een pagina"
+                )
+            if next_record_position > total_records:
+                raise SRUProtocolError("SRU nextRecordPosition ligt voorbij numberOfRecords")
             visited_positions.add(next_record_position)
             start_record = next_record_position
 
@@ -239,7 +265,7 @@ def changed_since(datum: date | str) -> list[Toestand]:
         return client.changed_since(datum)
 
 
-def _parse_sru_page(content: bytes) -> tuple[list[Toestand], int | None, int]:
+def _parse_sru_page(content: bytes) -> tuple[list[Toestand], tuple[int, ...], int | None, int]:
     try:
         root = ElementTree.fromstring(content)
     except ElementTree.ParseError as exc:
@@ -273,22 +299,36 @@ def _parse_sru_page(content: bytes) -> tuple[list[Toestand], int | None, int]:
     records_element = root.find(_tag(_SRU_NAMESPACE, "records"))
     if records_element is None:
         if total_records == 0:
-            return [], None, total_records
+            return [], (), None, total_records
         raise SRUProtocolError("SRU-response mist records ondanks een positieve recordcount")
 
     record_elements = records_element.findall(_tag(_SRU_NAMESPACE, "record"))
     page = [_parse_record(record) for record in record_elements]
+    positions = tuple(_parse_record_position(record) for record in record_elements)
     if total_records > 0 and not page:
         raise SRUProtocolError("SRU-response bevat geen records ondanks een positieve recordcount")
 
     next_text = _element_text(root, _tag(_SRU_NAMESPACE, "nextRecordPosition"))
     if next_text is None:
-        return page, None, total_records
+        return page, positions, None, total_records
     try:
         next_position = int(next_text)
     except ValueError as exc:
         raise SRUProtocolError("SRU nextRecordPosition is geen integer") from exc
-    return page, next_position, total_records
+    return page, positions, next_position, total_records
+
+
+def _parse_record_position(record: ElementTree.Element) -> int:
+    value = _element_text(record, _tag(_SRU_NAMESPACE, "recordPosition"))
+    if value is None:
+        raise SRUProtocolError("SRU-record mist recordPosition")
+    try:
+        position = int(value)
+    except ValueError as exc:
+        raise SRUProtocolError("SRU recordPosition is geen integer") from exc
+    if position < 1:
+        raise SRUProtocolError("SRU recordPosition moet positief zijn")
+    return position
 
 
 def _parse_record(record: ElementTree.Element) -> Toestand:
