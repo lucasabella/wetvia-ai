@@ -9,6 +9,9 @@ from wetvia.api.deps import HealthContext
 from wetvia.config import Settings
 from wetvia.db import create_db_engine, create_session_factory, database_status
 from wetvia.db.engine import DbStatus
+from wetvia.llm.adapters.ollama import OllamaProvider
+from wetvia.llm.adapters.openai_compat import OpenAICompatProvider
+from wetvia.llm.ports import LLMProvider
 
 
 def package_version() -> str:
@@ -16,6 +19,20 @@ def package_version() -> str:
         return version("wetvia-api")
     except PackageNotFoundError:
         return "0.0.0"
+
+
+def get_provider(settings: Settings) -> LLMProvider:
+    """Build the configured adapter. This is the only place that reads LLM settings."""
+    if settings.llm_provider == "ollama":
+        return OllamaProvider(base_url=settings.llm_base_url, model=settings.llm_model)
+    if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value().strip():
+        raise RuntimeError("LLM_API_KEY is required when LLM_PROVIDER is openai_compat")
+    api_key = settings.llm_api_key.get_secret_value()
+    return OpenAICompatProvider(
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        api_key=api_key,
+    )
 
 
 def build_app(settings: Settings | None = None) -> FastAPI:
@@ -35,6 +52,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     )
     app = create_app(context, shutdown=shutdown)
     app.state.session_factory = create_session_factory(engine)
+    app.state.llm = get_provider(loaded)
     return app
 
 
