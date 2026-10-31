@@ -10,6 +10,7 @@ from threading import Lock
 from fastapi import FastAPI
 
 from nl_wetten_ingest import BwbSRUClient
+from wetvia.answer import AnswerPipeline, Utf8ByteUpperBoundCounter
 from wetvia.api import create_app
 from wetvia.api.deps import HealthContext
 from wetvia.cli import build_cli
@@ -140,9 +141,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         sessions,
         _LazyEmbedder(loaded.embedding_model, loaded.embedding_dimension),
     )
+    provider = get_provider(loaded)
     app = create_app(context, retriever=retriever, shutdown=shutdown)
     app.state.session_factory = sessions
-    app.state.llm = get_provider(loaded)
+    app.state.llm = provider
+    app.state.answer_pipeline = AnswerPipeline(
+        retriever,
+        provider,
+        token_counter=Utf8ByteUpperBoundCounter(),
+    )
     return app
 
 

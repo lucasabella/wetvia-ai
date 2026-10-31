@@ -146,6 +146,9 @@ hybrid gebruikt RRF en de exacte-artikelboost.
 ```
 
 - **Elke bewering moet minstens één `bron_id` hebben** die in de opgehaalde context zit. De verifier wijst onbekende ID's af. Dat is "geen bron, geen claim" in code.
+- De answer-pipeline haalt standaard maximaal acht hybride chunks op. In de prompt krijgen alleen meegestuurde chunks de labels `[1]`–`[8]`; na schema-validatie worden die labels naar chunk-UUID's vertaald. Niet meegestuurde of onbekende labels kunnen zo geen bronverwijzing worden.
+- De broncontext is begrensd op maximaal 8.000 tokenbudget-eenheden en wordt per chunk deterministisch afgekapt. De bootstrap gebruikt standaard UTF-8-byte-lengte als conservatieve bovengrens, niet als exacte tokenmeting; een deployment kan een teller voor de tokenizer van het generator-model injecteren. Delimiters en bronvelden worden escaped voordat ze in de prompt komen.
+- De systeemprompt staat in `apps/api/src/wetvia/answer/prompts/answer_nl.md` en wordt met het pakket geïnstalleerd. Brontekst geldt als onbetrouwbare data; instructies in bronnen worden genegeerd. De schema-validatie en bestaande providerretry blijven actief.
 - **Dossiers:** het LLM vult alleen de tekstvelden (projectomschrijving). De structuur (secties, checklist van indieningsvereisten) komt uit een template + DSO-data. De DOCX wordt gemaakt met `docxtpl`, de PDF met WeasyPrint.
 
 ## 5. Abstentie (niet verzinnen)
