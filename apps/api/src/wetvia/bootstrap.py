@@ -149,6 +149,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         retriever,
         provider,
         token_counter=Utf8ByteUpperBoundCounter(),
+        abstention_tau=loaded.answer_abstention_tau,
     )
     return app
 

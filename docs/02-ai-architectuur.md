@@ -154,9 +154,11 @@ hybrid gebruikt RRF en de exacte-artikelboost.
 ## 5. Abstentie (niet verzinnen)
 
 Drie lagen:
-1. **Retrieval-drempel:** is de hoogste RRF-score lager dan τ (gekalibreerd op de eval-set), dan volgt direct `status: onzeker`.
+1. **Retrieval-drempel:** zonder zoekresultaten volgt direct `status: onzeker`; anders volgt die status als de hoogste hybride retrievalscore lager is dan τ. De voorlopige standaard is `ANSWER_ABSTENTION_TAU=0.01`; dit is nog niet gekalibreerd omdat de menselijk gecontroleerde dataset van issue #13 ontbreekt. Stel de drempel per omgeving in. Na menselijke review kan `uv run python eval/calibrate_tau.py --dataset /pad/naar/reviewed-v0.jsonl` een JSON-rapport met de F1-optimaliserende drempel maken. Het commando weigert items met `concept: true`; gebruik geen conceptdata voor kalibratie.
 2. **Prompt:** "Gebruik uitsluitend de BRONNEN. Staat het antwoord er niet in, zet dan `status` op `onzeker`."
-3. **Verifier na generatie:** per punt wordt gecontroleerd of de geciteerde chunk de bewering ondersteunt. MVP: lexicale overlap van de genoemde getallen en termen. Fase 2: een NLI/judge-call op de cloud. Bij twijfel wordt het punt verwijderd en een voorbehoud toegevoegd.
+3. **Verifier na generatie:** per punt worden onbekende bron-ID's, bronnen die niet geldig zijn op de peildatum of als vervallen staan, en expliciete getal/eenheid-paren (zoals lengtematen, jaren en aantallen woningen) die niet in de geciteerde tekst voorkomen verwijderd. Deze allowlistcontrole slaat artikel- en identifiernummers over; het is geen controle van semantische gevolgtrekkingen of juridische juistheid. Na verwijdering worden modelgegenereerde voorbehouden en vervolgstappen gewist. Die velden worden ook geleegd als het model abstineert. Zonder geverifieerde punten gebruikt de pipeline een vaste samenvatting voor `onzeker` of `buiten_scope`. Verwijderde punten komen niet terug in de samenvatting; bij een strikte meerderheid verwijderde punten volgt `status: onzeker`. Diagnostische `verifier_notes` zijn serverdebuginformatie: ze maken geen deel uit van het modelantwoord of `AnswerV1`-schema en de gebruikersinterface toont ze niet aan de gebruiker.
+
+De pure verifier staat in `wetvia.citations` en gebruikt alleen de standaardbibliotheek. De tau-calibrator leest een expliciet gekozen JSONL-bestand, roept de publieke retriever aan op categorie C/D/F en schrijft dataset-hash, itemscores en abstentie-F1 naar het opgegeven rapportpad. De uitkomst is alleen bruikbaar voor de exacte dataset, retrievalconfiguratie en embeddingruimte waarmee zij is gemaakt. De huidige standaard 0.01 blijft ongekalibreerd totdat de gecontroleerde issue #13-set beschikbaar is.
 
 ## 6. Evaluatie (het hart van het project)
 

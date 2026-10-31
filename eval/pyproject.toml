@@ -15,6 +15,7 @@ dependencies = [
 [project.scripts]
 wetvia-bench = "wetvia_eval.bench:main"
 wetvia-eval = "wetvia_eval.retrieval_eval:main"
+wetvia-calibrate-tau = "wetvia_eval.tau_calibration:main"
 
 [dependency-groups]
 dev = [

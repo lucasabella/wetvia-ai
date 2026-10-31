@@ -11,3 +11,8 @@ Een later item vereist `id`, `vraag`, `categorie`, `verwachte_status`,
 `concept`. Golden sources noemen `bwb_id`, `artikel` en `onderdeel` (null als
 er geen onderdeel is). Conceptfixtures horen buiten deze map of moeten
 `"concept": true` markeren. Hun scores zijn geen Wetvia-kwaliteitsmeting.
+
+Tau-kalibratie weigert ieder bestand met conceptitems. Pas nadat de vragen en
+verwachte statussen menselijk zijn gecontroleerd en alle regels
+`"concept": false` hebben, kan de calibrator de retrieval-abstentiedrempel
+berekenen. De uitkomst is gekoppeld aan de dataset-hash en retrievalconfiguratie.

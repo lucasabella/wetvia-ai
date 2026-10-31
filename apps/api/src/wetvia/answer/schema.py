@@ -79,4 +79,17 @@ class AnswerV1(BaseModel):
         return self
 
 
-__all__ = ["AnswerPoint", "AnswerStatus", "AnswerV1", "FollowUpStep"]
+class VerifiedAnswer(AnswerV1):
+    """Server response; verifier diagnostics are added after model generation."""
+
+    verifier_notes: list[str] = Field(default_factory=list)
+
+    @field_validator("verifier_notes")
+    @classmethod
+    def verifier_notes_must_be_nonblank(cls, value: list[str]) -> list[str]:
+        for note in value:
+            _validate_nonblank(note)
+        return value
+
+
+__all__ = ["AnswerPoint", "AnswerStatus", "AnswerV1", "FollowUpStep", "VerifiedAnswer"]

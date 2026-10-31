@@ -4,9 +4,15 @@ Doel: de retrieval-to-answer pipeline, publiek Pydantic-schema `AnswerV1` en
 packaged prompts. De pipeline krijgt de publieke `Retriever`- en `LLMProvider`-
 ports geïnjecteerd en maakt zelf geen adapters of settings aan.
 
-Publieke API: `AnswerPipeline`, `AnswerV1`, `AnswerPoint`, `AnswerStatus`,
-`FollowUpStep`, `SourceTokenCounter`, `Utf8ByteUpperBoundCounter` en
-`AnswerDateMismatchError` uit `__init__.py`.
+Publieke API: `AnswerPipeline`, `AnswerV1`, `VerifiedAnswer`, `AnswerPoint`,
+`AnswerStatus`, `FollowUpStep`, `SourceTokenCounter`,
+`Utf8ByteUpperBoundCounter`, `DEFAULT_ABSTENTION_TAU`,
+`AnswerDateMismatchError` en `UnknownSourceLabelError` uit `__init__.py`.
+
+`AnswerV1` blijft het schema voor de modeloutput. `VerifiedAnswer` voegt
+serverdiagnostiek (`verifier_notes`) na generatie toe; die diagnostiek is geen
+LLM-invoer of modelgegenereerde inhoud. De retrieval-abstentiedrempel wordt via
+bootstrap uit `ANSWER_ABSTENTION_TAU` geïnjecteerd.
 
 Toegestane imports: `wetvia.retrieval`, `wetvia.ingest`, `wetvia.citations`, `wetvia.rules`, `wetvia.llm`, `wetvia.embeddings`, `wetvia.db`, `wetvia.core` en de standaardbibliotheek. Niet `wetvia.dossier` of `wetvia.documents` (zelfde laag) en niets daarboven (`api`, `cli`, `bootstrap`).
 
