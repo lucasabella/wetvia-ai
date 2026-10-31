@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,8 @@ class _ModelStub:
     def __init__(self, vectors: list[list[float]]) -> None:
         self.vectors = vectors
         self.encode_calls: list[tuple[list[str], dict[str, object]]] = []
+        self.tokenizer = _WhitespaceTokenizer()
+        self.max_seq_length = 512
 
     def get_sentence_embedding_dimension(self) -> int:
         return len(self.vectors[0]) if self.vectors else 2
@@ -22,6 +25,28 @@ class _ModelStub:
     def encode(self, texts: list[str], **kwargs: object) -> list[list[float]]:
         self.encode_calls.append((texts, kwargs))
         return self.vectors
+
+
+class _WhitespaceTokenizer:
+    def num_special_tokens_to_add(self, *, pair: bool = False) -> int:
+        return 2
+
+    def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+        return list(range(len(list(re.finditer(r"\S+", text)))))
+
+    def __call__(
+        self,
+        text: str,
+        *,
+        add_special_tokens: bool = False,
+        return_offsets_mapping: bool = False,
+        truncation: bool = False,
+    ) -> dict[str, list[object]]:
+        matches = list(re.finditer(r"\S+", text))
+        return {
+            "input_ids": list(range(len(matches))),
+            "offset_mapping": [(match.start(), match.end()) for match in matches],
+        }
 
 
 def _torch_stub(*, cuda: bool, mps: bool) -> SimpleNamespace:
@@ -168,5 +193,44 @@ def test_adapter_rejects_wrong_vector_count() -> None:
     )
     model.vectors = [[1.0, 0.0], [0.0, 1.0]]
 
-    with pytest.raises(ValueError, match="2 vectors for 1 document inputs"):
+    with pytest.raises(ValueError, match="2 vectors for 1 input windows"):
         embedder.embed(["only one passage"])
+
+
+def test_long_input_tail_is_encoded_and_contributes_to_aggregated_vector() -> None:
+    class TailAwareModel:
+        tokenizer = _WhitespaceTokenizer()
+        max_seq_length = 16
+        encoded_texts: list[str]
+
+        def __init__(self) -> None:
+            self.encoded_texts = []
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return 2
+
+        def encode(self, texts: list[str], **kwargs: object) -> list[list[float]]:
+            self.encoded_texts = texts
+            return [[0.0, 1.0] if "TAIL_MARKER" in text else [1.0, 0.0] for text in texts]
+
+    model = TailAwareModel()
+    embedder = SentenceTransformersEmbedder(
+        "stub-model",
+        dimension=2,
+        model=model,
+        torch_module=_torch_stub(cuda=False, mps=False),
+    )
+    passage = (
+        "Bbl | Artikel 2.29\n"
+        "first legal unit; second unit has several words; TAIL_MARKER final terms"
+    )
+
+    vector = embedder.embed([passage])[0]
+
+    assert len(model.encoded_texts) > 1
+    assert any("TAIL_MARKER final terms" in text for text in model.encoded_texts)
+    assert all(
+        len(model.tokenizer.encode(text, add_special_tokens=False)) + 2 <= model.max_seq_length
+        for text in model.encoded_texts
+    )
+    assert vector[1] > 0

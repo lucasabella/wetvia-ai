@@ -145,6 +145,11 @@ wijzigt en de HNSW-index opnieuw opbouwt; zet daarna alleen
 breedte uit PostgreSQL en vereist daarvoor geen applicatiecode-wijziging. Er is
 geen modeldownload of inference-run in CI.
 
+Passages boven de modelcontext worden op paragraaf-, zin- en opsommingstekens
+gesplitst waar mogelijk, met maximaal 32 tokens overlap. De adapter herhaalt de
+artikelkop als er ruimte is en voegt de deelvectoren gewogen samen tot één
+genormaliseerde vector per chunk.
+
 > De DSO-key vervalt na een jaar zonder gebruik ([fair use](https://developer.omgevingswet.overheid.nl/services/fair-use-policy/)). Zet een ping in `drift-check.yml`.
 
 ## Kosten (per maand)

@@ -40,6 +40,12 @@ the new `EMBEDDING_MODEL` before re-embedding. The runtime reads the migrated
 PostgreSQL vector width, so supporting a new model dimension needs no application
 code change.
 
+If a passage exceeds the model context, the adapter tokenizes it without
+truncation, splits at paragraph/sentence/list punctuation where possible, and
+uses overlapping windows (up to 32 tokens). It repeats the passage heading
+when the context budget allows, then length-weights and normalizes the window
+vectors into one chunk vector.
+
 The data schema requires PostgreSQL with pgvector. SQLite migration tests cover
 Alembic URL selection only; CI runs migration, ingest, and embedding job
 integration tests on its PostgreSQL+pgvector service.

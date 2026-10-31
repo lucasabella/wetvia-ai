@@ -101,6 +101,7 @@ flowchart TD
 - Metadata per chunk: `bwb_id`, `regeling_titel`, `artikel`, `lid`, `onderdeel`, `kop` (hoofdstuk/afdeling/paragraaf-pad), `geldig_vanaf`, `geldig_tot`, `toestand_id`, `bron_url` (JCI-deeplink, bijv. `https://wetten.overheid.nl/jci1.3:c:BWBR0041297&artikel=2.29`, zelf gecontroleerd), `status` (`geldend` | `toekomstig` | `vervallen` | `voorstel`).
 - De tekst die wordt geëmbed = `"{regeling} | {kop-pad} | Artikel {nr} ({opschrift})\n{tekst}"`. Het pad helpt de retrieval enorm.
 - **Modelinvoer:** volgens de [modelkaart van multilingual-e5-large-instruct](https://huggingface.co/intfloat/multilingual-e5-large-instruct) krijgt documenttekst geen `passage:`-prefix. Queries gebruiken `Instruct: {task}\nQuery: {query}`. Issue #11 noemt tussen haakjes een passage-prefix; die parenthetical wijkt af van de modelkaart, dus de implementatie volgt de modelkaart.
+- Passages die langer zijn dan de modelcontext worden zonder truncatie gesplitst bij alinea-, zins- of opsommingstekens waar dat kan, met maximaal 32 tokens overlap. De adapter herhaalt de artikelkop als er ruimte is en voegt de genormaliseerde deelvectoren gewogen samen tot één chunk-vector.
 
 ### 3.2 Hybride retrieval
 
