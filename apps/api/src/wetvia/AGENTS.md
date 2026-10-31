@@ -6,7 +6,7 @@ Deze twee modules zijn bestanden, geen pakketten. Hogere lagen staan in de root-
 
 Doel: composition root. `build_app` is de enige plek die `Settings` (`wetvia.config`) aanmaakt. Het ASGI-object is `app` (lui).
 
-Publieke API: `build_app`, `package_version`, `app`.
+Publieke API: `build_app`, `get_provider`, `package_version`, `app`. `get_provider` kiest de LLM-adapter. `build_app` zet die op `app.state.llm`.
 
 Toegestane imports: `wetvia.config` en alle lagere lagen (`wetvia.api`, `wetvia.cli`, `wetvia.answer`, `wetvia.dossier`, `wetvia.documents`, `wetvia.retrieval`, `wetvia.ingest`, `wetvia.citations`, `wetvia.rules`, `wetvia.llm`, `wetvia.embeddings`, `wetvia.db`, `wetvia.core`). Andere modules importeren `wetvia.config` niet.
 
