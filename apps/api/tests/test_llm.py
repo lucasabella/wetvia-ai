@@ -329,6 +329,34 @@ def test_strict_json_schema_closes_objects_and_defs() -> None:
     assert child["required"] == ["name"]
 
 
+def test_openai_next_chat_starts_with_json_schema_again() -> None:
+    async def run() -> None:
+        with respx.mock:
+            route = respx.post("http://llm.test/v1/chat/completions").mock(
+                side_effect=[
+                    httpx.Response(
+                        400,
+                        json={"error": {"message": "unsupported", "type": "invalid_request_error"}},
+                    ),
+                    httpx.Response(200, json=_openai_body('{"value":"ok"}')),
+                    httpx.Response(200, json=_openai_body('{"value":"again"}')),
+                ]
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            first = await provider.chat(_messages(), Probe, False, 0.0)
+            second = await provider.chat(_messages(), Probe, False, 0.0)
+        formats = [
+            json.loads(call.request.content)["response_format"]["type"] for call in route.calls
+        ]
+        assert formats == ["json_schema", "json_object", "json_schema"]
+        assert isinstance(first, Probe)
+        assert first.value == "ok"
+        assert isinstance(second, Probe)
+        assert second.value == "again"
+
+    asyncio.run(run())
+
+
 def test_openai_retries_invalid_json_once() -> None:
     async def run() -> None:
         with respx.mock:

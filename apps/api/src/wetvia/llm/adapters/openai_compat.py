@@ -39,7 +39,6 @@ class OpenAICompatProvider:
         self._base_url = base_url
         self._model = model
         self._api_key = api_key
-        self._json_object_only = False
 
     def __repr__(self) -> str:
         return f"OpenAICompatProvider(base_url={self._base_url!r}, model={self._model!r})"
@@ -54,24 +53,28 @@ class OpenAICompatProvider:
         if schema is not None:
             if stream:
                 raise ValueError("schema and stream cannot be combined")
-            return await parse_with_one_retry(
-                schema,
-                messages,
-                lambda current: self._complete_schema(current, schema, temperature),
-            )
+            json_object_only = False
+
+            async def complete(current: Sequence[ChatMessage]) -> str:
+                nonlocal json_object_only
+                if json_object_only:
+                    return await self._create_json_object(current, schema, temperature)
+                try:
+                    schema_format = self._json_schema_format(schema)
+                    return await self._create(current, temperature, schema_format)
+                except APIStatusError as exc:
+                    if exc.status_code not in _SCHEMA_UNSUPPORTED:
+                        raise
+                    json_object_only = True
+                    return await self._create_json_object(current, schema, temperature)
+
+            return await parse_with_one_retry(schema, messages, complete)
         if stream:
             return self._stream(messages, temperature)
         return await self._complete_text(messages, temperature)
 
-    async def _complete_schema(
-        self,
-        messages: Sequence[ChatMessage],
-        schema: type[ModelT],
-        temperature: float,
-    ) -> str:
-        if self._json_object_only:
-            return await self._create_json_object(messages, schema, temperature)
-        json_schema: dict[str, object] = {
+    def _json_schema_format(self, schema: type[ModelT]) -> dict[str, object]:
+        return {
             "type": "json_schema",
             "json_schema": {
                 "name": schema.__name__,
@@ -79,13 +82,6 @@ class OpenAICompatProvider:
                 "strict": True,
             },
         }
-        try:
-            return await self._create(messages, temperature, json_schema)
-        except APIStatusError as exc:
-            if exc.status_code not in _SCHEMA_UNSUPPORTED:
-                raise
-            self._json_object_only = True
-            return await self._create_json_object(messages, schema, temperature)
 
     async def _create_json_object(
         self,
