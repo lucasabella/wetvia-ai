@@ -1,14 +1,18 @@
 """Composition root. This is the only module that constructs ``Settings``."""
 
+import asyncio
 from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import FastAPI
 
+from nl_wetten_ingest import BwbSRUClient
 from wetvia.api import create_app
 from wetvia.api.deps import HealthContext
+from wetvia.cli import build_cli
 from wetvia.config import Settings
 from wetvia.db import create_db_engine, create_session_factory, database_status
 from wetvia.db.engine import DbStatus
+from wetvia.ingest import IngestService
 from wetvia.llm.adapters.ollama import OllamaProvider
 from wetvia.llm.adapters.openai_compat import OpenAICompatProvider
 from wetvia.llm.ports import LLMProvider
@@ -72,6 +76,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(engine)
     app.state.llm = get_provider(loaded)
     return app
+
+
+def run_cli(settings: Settings | None = None) -> None:
+    """Compose the batch CLI without constructing API or LLM adapters."""
+    loaded = settings if settings is not None else Settings()
+    engine = create_db_engine(loaded.database_url)
+    try:
+        with BwbSRUClient() as source:
+            service = IngestService(create_session_factory(engine), source)
+            build_cli(service)()
+    finally:
+        asyncio.run(engine.dispose())
 
 
 _app: FastAPI | None = None

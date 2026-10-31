@@ -13,6 +13,7 @@ from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import wetvia.db.schema  # noqa: F401  # Register feature models in Base.metadata.
 from wetvia.db.base import Base
 
 config = context.config

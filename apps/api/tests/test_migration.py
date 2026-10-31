@@ -1,11 +1,11 @@
-"""The first Alembic revision applies. SQLite stands in for Postgres in this empty migration."""
+"""SQLite tests the Alembic URL wiring; Postgres integration tests the data schema."""
 
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 _API_ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,7 +24,13 @@ def _applied_version(database_path: Path) -> str:
     return str(version)
 
 
-def test_empty_migration_uses_ini_url_when_database_url_is_blank(
+def _table_names(database_path: Path) -> set[str]:
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.connect() as connection:
+        return set(inspect(connection).get_table_names())
+
+
+def test_postgres_only_schema_revision_uses_ini_url_when_database_url_is_blank(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -33,7 +39,8 @@ def test_empty_migration_uses_ini_url_when_database_url_is_blank(
 
     command.upgrade(_alembic_config(f"sqlite:///{database_path}"), "head")
 
-    assert _applied_version(database_path) == "0001_empty"
+    assert _applied_version(database_path) == "0002_ingest_schema"
+    assert not {"regeling", "toestand", "chunk"} & _table_names(database_path)
 
 
 def test_database_url_overrides_ini_url(
@@ -46,5 +53,6 @@ def test_database_url_overrides_ini_url(
 
     command.upgrade(_alembic_config(f"sqlite:///{from_ini}"), "head")
 
-    assert _applied_version(from_env) == "0001_empty"
+    assert _applied_version(from_env) == "0002_ingest_schema"
     assert not from_ini.exists()
+    assert not {"regeling", "toestand", "chunk"} & _table_names(from_env)

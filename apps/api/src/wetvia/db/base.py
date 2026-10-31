@@ -1,4 +1,4 @@
-"""Declarative base. No tables yet; the first migration is empty."""
+"""Declarative base shared by feature-owned database schemas."""
 
 from sqlalchemy.orm import DeclarativeBase
 
