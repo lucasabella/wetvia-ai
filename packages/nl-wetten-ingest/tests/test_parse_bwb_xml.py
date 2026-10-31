@@ -134,6 +134,36 @@ def test_table_is_rendered_as_markdown_and_repealed_articles_are_labeled(
     assert "Vervallen" in repealed.tekst
 
 
+def test_bbl_cals_rowspan_and_colspan_are_repeated_in_markdown(
+    bbl_chunks: list[Chunk],
+) -> None:
+    article = next(chunk for chunk in bbl_chunks if chunk.artikel == "4.15b")
+    lines = article.tekst.splitlines()
+    expected_second_header = [
+        "Waterdiepte (m)",
+        "30",
+        "50",
+        "75",
+        "100",
+        "150",
+        "200",
+        "500",
+        "700",
+        "1.000",
+        "1.500",
+    ]
+
+    for table_number in ("4.15b.1", "4.15b.2"):
+        caption_index = next(
+            index for index, line in enumerate(lines) if line.startswith(f"**Tabel {table_number} ")
+        )
+        colspan_header = [cell.strip() for cell in lines[caption_index + 1].strip("|").split("|")]
+        second_header = [cell.strip() for cell in lines[caption_index + 3].strip("|").split("|")]
+
+        assert colspan_header == ["Waterdiepte (m)", *["Strijklengte (m)"] * 10]
+        assert second_header == expected_second_header
+
+
 def test_long_lists_split_at_member_boundaries_and_repeat_lead_in(
     bbl_toestand: Toestand,
 ) -> None:

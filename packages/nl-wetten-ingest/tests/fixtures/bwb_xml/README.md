@@ -32,3 +32,5 @@ Golden assertions were checked against these source files:
 - Awb article 6:5 has three official `<lid>` elements.
 - Bbl article 2.10 is marked `vervallen` in the XML.
 - Bbl article 3.8 includes official table 3.8, rendered to Markdown by tests.
+- Bbl article 4.15b tables 4.15b.1 and 4.15b.2 use official CALS `morerows=1`
+  and `namest`/`nameend` header spans, covered by the table-layout regressions.

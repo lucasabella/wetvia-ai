@@ -671,7 +671,7 @@ def _render_table(table: etree._Element) -> str:
     if column_count <= 0:
         column_count = max((len(row.findall("entry")) for row in all_rows), default=1)
 
-    matrix = [_table_row(row, column_count) for row in all_rows]
+    matrix = _table_rows(all_rows, column_count)
     header = matrix[0]
     output = [f"**{caption}**" if caption else "", _markdown_row(header)]
     output.append(_markdown_row(["---"] * column_count))
@@ -679,24 +679,68 @@ def _render_table(table: etree._Element) -> str:
     return "\n".join(part for part in output if part)
 
 
-def _table_row(row: etree._Element, column_count: int) -> list[str]:
-    cells = [""] * column_count
-    cursor = 1
-    for entry in row.findall("entry"):
-        start = _column_number(entry.get("colname") or entry.get("namest")) or cursor
-        end = _column_number(entry.get("nameend")) or start
-        start = max(1, start)
-        end = max(start, end)
-        if start > len(cells):
-            cells.extend([""] * (start - len(cells)))
-        value = _render_children(entry, excluded={"meta-data"})
-        cells[start - 1] = _normalise_inline(value).replace("|", "\\|")
-        if end > len(cells):
-            cells.extend([""] * (end - len(cells)))
-        cursor = end + 1
-    if len(cells) < column_count:
-        cells.extend([""] * (column_count - len(cells)))
-    return cells[: max(column_count, len(cells))]
+def _table_rows(rows: list[etree._Element], column_count: int) -> list[list[str]]:
+    matrix: list[list[str]] = []
+    active_rowspans: dict[int, tuple[str, int]] = {}
+
+    for row in rows:
+        cells = [""] * column_count
+        occupied_columns: set[int] = set()
+        next_rowspans: dict[int, tuple[str, int]] = {}
+
+        for column, (value, rows_remaining) in active_rowspans.items():
+            _ensure_table_width(cells, column + 1)
+            cells[column] = value
+            occupied_columns.add(column)
+            if rows_remaining > 1:
+                next_rowspans[column] = (value, rows_remaining - 1)
+
+        cursor = 1
+        for entry in row.findall("entry"):
+            explicit_start = _column_number(entry.get("colname") or entry.get("namest"))
+            start = explicit_start or cursor
+            if explicit_start is None:
+                while start - 1 in occupied_columns:
+                    start += 1
+            end = _column_number(entry.get("nameend")) or start
+            start = max(1, start)
+            end = max(start, end)
+            _ensure_table_width(cells, end)
+            occupied = set(range(start - 1, end))
+            value = _normalise_inline(_render_children(entry, excluded={"meta-data"})).replace(
+                "|", "\\|"
+            )
+            for column in occupied.intersection(occupied_columns):
+                if cells[column] and value and cells[column] != value:
+                    raise BWBXMLParseError("Overlapping cells in BWB CALS table row")
+            try:
+                rows_spanned = int(entry.get("morerows", "0"))
+            except ValueError as exc:
+                raise BWBXMLParseError("Invalid CALS table morerows value") from exc
+            if rows_spanned < 0:
+                raise BWBXMLParseError("Invalid CALS table morerows value")
+
+            # Markdown has no merged cells, so repeat the official cell value
+            # across every column and row covered by the CALS span.
+            for column in occupied:
+                previously_occupied = column in occupied_columns
+                previous_value = cells[column]
+                if value or not cells[column]:
+                    cells[column] = value
+                occupied_columns.add(column)
+                if rows_spanned and (not previously_occupied or (value and not previous_value)):
+                    next_rowspans[column] = (value, rows_spanned)
+            cursor = end + 1
+
+        matrix.append(cells)
+        active_rowspans = next_rowspans
+
+    return matrix
+
+
+def _ensure_table_width(cells: list[str], required_width: int) -> None:
+    if len(cells) < required_width:
+        cells.extend([""] * (required_width - len(cells)))
 
 
 def _markdown_row(cells: list[str]) -> str:

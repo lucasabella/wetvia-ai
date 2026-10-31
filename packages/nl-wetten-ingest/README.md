@@ -31,7 +31,7 @@ for chunk in chunks:
     print(chunk.artikel, chunk.lid, chunk.onderdeel, chunk.tekst, chunk.bron_url)
 ```
 
-De parser gebruikt `lxml.iterparse` met DTD- en externe-entiteitsresolutie uitgeschakeld. Lange artikelen worden op lid- of lijstonderdeelniveau gesplitst; een ondeelbare alinea of lijstitem blijft intact, ook als die groter is dan `max_chars` (standaard 4000). Tabellen worden als Markdown weergegeven. `Chunk` en `BWBXMLParseError` zijn ook publiek geëxporteerd.
+De parser gebruikt `lxml.iterparse` met DTD- en externe-entiteitsresolutie uitgeschakeld. Lange artikelen worden op lid- of lijstonderdeelniveau gesplitst; een ondeelbare alinea of lijstitem blijft intact, ook als die groter is dan `max_chars` (standaard 4000). Tabellen worden als Markdown weergegeven; CALS-rowspan en -colspan blijven behouden door celinhoud te herhalen in alle bestreken Markdown-cellen. `Chunk` en `BWBXMLParseError` zijn ook publiek geëxporteerd.
 
 `Toestand` bevat `bwb_id`, `titel`, `geldig_vanaf`, `geldig_tot`, `toestand_url` en `modified`. Datums zijn `datetime.date`-waarden; `geldig_tot` is `None` als de SRU-respons geen einddatum bevat. Expliciete bronwaarden, waaronder `9999-12-31`, blijven ongewijzigd. De geldigheidsgrenzen zijn inclusief. `select_toestand` geeft alleen een resultaat als precies één toestand op de peildatum geldt; bij nul of meerdere resultaten volgt een `ValueError`.
 
