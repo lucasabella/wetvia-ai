@@ -1,7 +1,9 @@
 """Composition root. This is the only module that constructs ``Settings``."""
 
 import asyncio
+from collections.abc import Sequence
 from importlib.metadata import PackageNotFoundError, version
+from threading import Lock
 
 from fastapi import FastAPI
 
@@ -17,6 +19,31 @@ from wetvia.ingest import EmbeddingJob, IngestService
 from wetvia.llm.adapters.ollama import OllamaProvider
 from wetvia.llm.adapters.openai_compat import OpenAICompatProvider
 from wetvia.llm.ports import LLMProvider
+from wetvia.retrieval.adapters.pg import PgHybridRetriever
+
+
+class _LazyEmbedder:
+    """Defer sentence-transformers and its model files until the first search."""
+
+    def __init__(self, model_id: str, dimension: int) -> None:
+        self.model_id = model_id
+        self.dimension = dimension
+        self._adapter: SentenceTransformersEmbedder | None = None
+        self._lock = Lock()
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        adapter = self._get_adapter()
+        return adapter.embed(texts)
+
+    def _get_adapter(self) -> SentenceTransformersEmbedder:
+        if self._adapter is None:
+            with self._lock:
+                if self._adapter is None:
+                    self._adapter = SentenceTransformersEmbedder(
+                        self.model_id,
+                        dimension=self.dimension,
+                    )
+        return self._adapter
 
 
 def package_version() -> str:
@@ -73,8 +100,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         version=package_version(),
         check_db=check_db,
     )
-    app = create_app(context, shutdown=shutdown)
-    app.state.session_factory = create_session_factory(engine)
+    sessions = create_session_factory(engine)
+    retriever = PgHybridRetriever(
+        sessions,
+        _LazyEmbedder(loaded.embedding_model, loaded.embedding_dimension),
+    )
+    app = create_app(context, retriever=retriever, shutdown=shutdown)
+    app.state.session_factory = sessions
     app.state.llm = get_provider(loaded)
     return app
 
