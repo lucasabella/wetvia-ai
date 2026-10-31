@@ -153,6 +153,8 @@ def test_pipeline_searches_hybrid_at_requested_date_and_maps_labels_to_uuids() -
     assert messages[0]["role"] == "system"
     assert "B1-niveau" in messages[0]["content"]
     assert "Peildatum: 2026-10-31" in messages[1]["content"]
+    assert "verifier_notes" not in schema.model_fields
+    assert answer.verifier_notes == []
     schema_json = schema.model_json_schema()
     point_schema = next(
         value
@@ -187,6 +189,58 @@ def test_empty_retrieval_returns_deterministic_uncertain_answer_without_llm_call
     assert answer.peildatum == date(2026, 10, 31)
     assert retriever.search_calls[0][2:] == (8, False, "hybrid")
     assert provider.calls == []
+
+
+def test_low_hybrid_score_abstains_before_generation_and_equal_tau_passes() -> None:
+    source = _source()
+    low_retriever = FakeRetriever([ScoredChunk(source, 0.009)])
+    low_provider = FakeProvider([])
+    low_pipeline = AnswerPipeline(low_retriever, low_provider, abstention_tau=0.01)
+    low_answer = asyncio.run(low_pipeline.answer("synthetic question", date(2026, 10, 31)))
+
+    assert low_answer.status == "onzeker"
+    assert low_provider.calls == []
+    assert any("below abstention tau" in note for note in low_answer.verifier_notes)
+    assert low_answer.voorbehouden == [
+        "De gevonden bronnen boden onvoldoende houvast voor een betrouwbaar antwoord."
+    ]
+
+    equal_retriever = FakeRetriever([ScoredChunk(source, 0.01)])
+    equal_provider = FakeProvider([_reply()])
+    equal_pipeline = AnswerPipeline(equal_retriever, equal_provider, abstention_tau=0.01)
+    equal_answer = asyncio.run(equal_pipeline.answer("synthetic question", date(2026, 10, 31)))
+    assert equal_answer.status == "beantwoord"
+    assert len(equal_provider.calls) == 1
+
+
+def test_verifier_removes_unsupported_points_and_rebuilds_stale_summary() -> None:
+    source = _source(text="Synthetic source reports a sample measurement of 1.75 m.")
+    reply = json.dumps(
+        {
+            "status": "beantwoord",
+            "samenvatting": "Synthetic summary includes 2.00 m and 3.00 m.",
+            "punten": [
+                {"tekst": "Synthetic point reports 1.75 m.", "bron_ids": ["[1]"]},
+                {"tekst": "Synthetic point reports 2.00 m.", "bron_ids": ["[1]"]},
+                {"tekst": "Synthetic point reports 3.00 m.", "bron_ids": ["[1]"]},
+            ],
+            "voorbehouden": [],
+            "vervolgstappen": [],
+            "peildatum": "2026-10-31",
+        }
+    )
+    pipeline, _retriever, provider = _pipeline([source], [reply])
+
+    answer = asyncio.run(pipeline.answer("synthetic question", date(2026, 10, 31)))
+
+    assert answer.status == "onzeker"
+    assert [point.tekst for point in answer.punten] == ["Synthetic point reports 1.75 m."]
+    assert "1.75 m" in answer.samenvatting
+    assert "2.00 m" not in answer.samenvatting
+    assert "3.00 m" not in answer.samenvatting
+    assert len(answer.verifier_notes) == 3
+    assert any("more than half" in note for note in answer.verifier_notes)
+    assert "verifier_notes" not in provider.calls[0][1].model_fields
 
 
 def test_source_budget_truncates_unicode_chunks_deterministically() -> None:

@@ -1,5 +1,6 @@
 """Process settings. Only ``wetvia.bootstrap`` may construct this."""
 
+import math
 from pathlib import Path
 
 from pydantic import Field, SecretStr, field_validator
@@ -29,6 +30,14 @@ class Settings(BaseSettings):
     embedding_model: str = "intfloat/multilingual-e5-large-instruct"
     embedding_dimension: int = Field(default=1024, gt=0)
     embedding_batch_size: int = Field(default=32, gt=0)
+    answer_abstention_tau: float = Field(default=0.01, ge=0, le=1)
+
+    @field_validator("answer_abstention_tau")
+    @classmethod
+    def tau_must_be_finite(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError("answer_abstention_tau must be finite")
+        return value
 
     @field_validator("llm_api_key", mode="before")
     @classmethod

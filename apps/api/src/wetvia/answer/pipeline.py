@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import math
 from collections.abc import Sequence
 from datetime import date, datetime
 from importlib.resources import files
@@ -11,14 +12,22 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
-from wetvia.answer.schema import AnswerPoint, AnswerStatus, AnswerV1, FollowUpStep
+from wetvia.answer.schema import AnswerPoint, AnswerStatus, FollowUpStep, VerifiedAnswer
+from wetvia.citations import (
+    CitationClaim,
+    CitationSource,
+    retrieval_score_below_tau,
+    verify_citations,
+)
 from wetvia.llm import ChatMessage, LLMProvider
 from wetvia.retrieval import Retriever, ScoredChunk, SourceDocument
 
 MAX_SOURCE_TOKENS = 8000
 MAX_SOURCES = 8
 ANSWER_TEMPERATURE = 0.2
+DEFAULT_ABSTENTION_TAU = 0.01
 ANSWER_SEARCH_MODE: Literal["hybrid"] = "hybrid"
+_REMOVAL_CAVEAT = "Een of meer beweringen zijn weggelaten omdat de bron ze niet bevestigde."
 
 
 class SourceTokenCounter(Protocol):
@@ -157,18 +166,26 @@ class AnswerPipeline:
         *,
         token_counter: SourceTokenCounter | None = None,
         max_source_tokens: int = MAX_SOURCE_TOKENS,
+        abstention_tau: float = DEFAULT_ABSTENTION_TAU,
         system_prompt: str | None = None,
     ) -> None:
         if max_source_tokens <= 0 or max_source_tokens > MAX_SOURCE_TOKENS:
             raise ValueError(f"max_source_tokens must be between 1 and {MAX_SOURCE_TOKENS}")
+        if (
+            isinstance(abstention_tau, bool)
+            or not math.isfinite(abstention_tau)
+            or not 0.0 <= abstention_tau <= 1.0
+        ):
+            raise ValueError("abstention_tau must be a finite number between 0 and 1")
         self._retriever = retriever
         self._provider = provider
         self._counter = token_counter if token_counter is not None else Utf8ByteUpperBoundCounter()
         self._max_source_tokens = max_source_tokens
+        self._abstention_tau = abstention_tau
         self._system_prompt = system_prompt or _load_prompt()
 
-    async def answer(self, vraag: str, peildatum: date | str) -> AnswerV1:
-        """Retrieve up to eight hybrid chunks and return a validated AnswerV1."""
+    async def answer(self, vraag: str, peildatum: date | str) -> VerifiedAnswer:
+        """Retrieve, generate, and verify an answer with source-linked claims."""
         requested_date = _validate_peildatum(peildatum)
         if not vraag.strip():
             raise ValueError("vraag mag niet leeg zijn")
@@ -180,9 +197,29 @@ class AnswerPipeline:
             include_future=False,
             mode=ANSWER_SEARCH_MODE,
         )
+        if not retrieved:
+            return _uncertain_without_sources(
+                requested_date,
+                verifier_notes=("retrieval returned no sources",),
+            )
+        best_score = max(result.score for result in retrieved)
+        if retrieval_score_below_tau(best_score, self._abstention_tau):
+            return _uncertain_without_sources(
+                requested_date,
+                caveat=(
+                    "De gevonden bronnen boden onvoldoende houvast voor een betrouwbaar antwoord."
+                ),
+                verifier_notes=(
+                    f"retrieval score {best_score:.6g} is below abstention tau "
+                    f"{self._abstention_tau:.6g}",
+                ),
+            )
         source_context, label_to_source = self._source_context(retrieved)
         if not label_to_source:
-            return _uncertain_without_sources(requested_date)
+            return _uncertain_without_sources(
+                requested_date,
+                verifier_notes=("no usable source text fit in the source-context budget",),
+            )
 
         messages = self._messages(vraag.strip(), requested_date, source_context)
         schema = _draft_schema(tuple(label_to_source))
@@ -202,23 +239,76 @@ class AnswerPipeline:
                 f"model returned peildatum {actual_date}, expected {expected_date}"
             )
 
-        points: list[AnswerPoint] = []
+        generated_points: list[AnswerPoint] = []
         for point in draft.punten:
             source_ids: list[UUID] = []
             for label in point.bron_ids:
                 source_id = label_to_source.get(label)
                 if source_id is None:
                     raise UnknownSourceLabelError(f"model cited unknown source label {label!r}")
-                source_ids.append(source_id)
-            points.append(AnswerPoint(tekst=point.tekst, bron_ids=source_ids))
+                if source_id not in source_ids:
+                    source_ids.append(source_id)
+            generated_points.append(AnswerPoint(tekst=point.tekst, bron_ids=source_ids))
 
-        return AnswerV1(
-            status=draft.status,
-            samenvatting=draft.samenvatting,
-            punten=points,
-            voorbehouden=draft.voorbehouden,
+        source_by_id = {result.source.chunk_id: result.source for result in retrieved}
+        verifier_sources = {
+            source_id: CitationSource(
+                chunk_id=source_id,
+                text=source_by_id[source_id].tekst,
+                geldig_vanaf=source_by_id[source_id].metadata.geldig_vanaf,
+                geldig_tot=source_by_id[source_id].metadata.geldig_tot,
+                status=source_by_id[source_id].metadata.status,
+                artikel_status=source_by_id[source_id].metadata.artikel_status,
+            )
+            for source_id in label_to_source.values()
+        }
+        verification = verify_citations(
+            [CitationClaim(point.tekst, tuple(point.bron_ids)) for point in generated_points],
+            verifier_sources,
+            requested_date,
+        )
+        generated_by_index = dict(enumerate(generated_points))
+        verified_points = [
+            AnswerPoint(
+                tekst=generated_by_index[claim.point_index].tekst,
+                bron_ids=list(claim.source_ids),
+            )
+            for claim in verification.verified_claims
+        ]
+
+        status = draft.status
+        summary = draft.samenvatting
+        caveats = list(draft.voorbehouden)
+        verifier_notes = list(verification.notes)
+        if verification.removed_count:
+            summary = _summary_from_verified_points(verified_points)
+            if _REMOVAL_CAVEAT not in caveats:
+                caveats.append(_REMOVAL_CAVEAT)
+        majority_removed = verification.strict_majority_removed
+        no_verified_answered_points = status == "beantwoord" and not verified_points
+        if majority_removed or no_verified_answered_points:
+            status = "onzeker"
+            if not verified_points:
+                summary = _UNCERTAIN_SUMMARY
+            if majority_removed:
+                verifier_notes.append(
+                    "more than half of generated points were removed; "
+                    "answer status set to uncertain"
+                )
+            elif no_verified_answered_points:
+                verifier_notes.append(
+                    "no verified points remain for an answered draft; "
+                    "answer status set to uncertain"
+                )
+
+        return VerifiedAnswer(
+            status=status,
+            samenvatting=summary,
+            punten=verified_points,
+            voorbehouden=caveats,
             vervolgstappen=draft.vervolgstappen,
             peildatum=requested_date,
+            verifier_notes=verifier_notes,
         )
 
     def _messages(
@@ -243,9 +333,13 @@ class AnswerPipeline:
         self,
         retrieved: Sequence[ScoredChunk],
     ) -> tuple[str, dict[str, UUID]]:
-        candidates = [
-            result.source for result in retrieved[:MAX_SOURCES] if result.source.tekst.strip()
-        ]
+        candidates: list[SourceDocument] = []
+        seen_source_ids: set[UUID] = set()
+        for result in retrieved[:MAX_SOURCES]:
+            source = result.source
+            if source.tekst.strip() and source.chunk_id not in seen_source_ids:
+                candidates.append(source)
+                seen_source_ids.add(source.chunk_id)
         if not candidates:
             return "", {}
 
@@ -352,20 +446,41 @@ def _truncate_at_boundary(text: str, limit: int) -> str:
     return prefix
 
 
-def _uncertain_without_sources(peildatum: date) -> AnswerV1:
-    return AnswerV1(
+def _uncertain_without_sources(
+    peildatum: date,
+    *,
+    caveat: str = "Er zijn geen bruikbare bronnen gevonden voor deze vraag.",
+    verifier_notes: Sequence[str] = (),
+) -> VerifiedAnswer:
+    return VerifiedAnswer(
         status="onzeker",
-        samenvatting="Ik kan deze vraag niet beantwoorden met de gevonden bronnen.",
+        samenvatting=_UNCERTAIN_SUMMARY,
         punten=[],
-        voorbehouden=["Er zijn geen bruikbare bronnen gevonden voor deze vraag."],
+        voorbehouden=[caveat],
         vervolgstappen=[],
         peildatum=peildatum,
+        verifier_notes=list(verifier_notes),
     )
+
+
+def _summary_from_verified_points(points: Sequence[AnswerPoint]) -> str:
+    selected: list[str] = []
+    for point in points:
+        candidate = " ".join((*selected, point.tekst.strip()))
+        if len(candidate.split()) <= 80:
+            selected.append(point.tekst.strip())
+    return " ".join(selected) if selected else _UNCERTAIN_SUMMARY
+
+
+_UNCERTAIN_SUMMARY = (
+    "Ik kan deze vraag niet met voldoende zekerheid beantwoorden op basis van de gevonden bronnen."
+)
 
 
 __all__ = [
     "ANSWER_SEARCH_MODE",
     "ANSWER_TEMPERATURE",
+    "DEFAULT_ABSTENTION_TAU",
     "MAX_SOURCES",
     "MAX_SOURCE_TOKENS",
     "AnswerDateMismatchError",

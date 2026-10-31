@@ -60,6 +60,27 @@ mee in metric-noemers; de rapporten tonen de aantallen apart. Recall@k telt
 distincte `(bwb_id, artikel)`-sleutels binnen de eerste `k` ruwe chunks. MRR
 gebruikt de oorspronkelijke chunk-rang van de eerste gouden artikelmatch.
 
+## Abstentiedrempel kalibreren
+
+De API gebruikt standaard `ANSWER_ABSTENTION_TAU=0.01`. Deze waarde is
+voorlopig en ongekalibreerd omdat de menselijk gecontroleerde dataset van
+issue #13 ontbreekt. Nadat de dataset is gecontroleerd, kan de drempel worden
+berekend met:
+
+```bash
+uv run python eval/calibrate_tau.py \
+  --dataset /path/to/reviewed-v0.jsonl \
+  --output eval/reports/tau-calibration.json
+```
+
+De calibrator weigert datasets met `concept: true`, gebruikt alleen
+gecontroleerde categorie C/D/F en kiest de drempel die abstentie-F1 maximaliseert
+onder de strikte regel `hoogste hybride score < tau`. Het JSON-rapport bevat de
+dataset-SHA-256, scores per item, verwarringsmatrixaantallen en beperkingen.
+Het meet geen citatie-ondersteuning of juridische juistheid. Stel de
+aanbevolen waarde in met `ANSWER_ABSTENTION_TAU`; vervang de standaard niet
+op basis van synthetische fixtures of een andere dataset/configuratie.
+
 Context staat vast op `num_ctx=16384` en `think` staat uit. Per model gaat er eerst een warm-up-call uit die niet meetelt voor TTFT of tokens/s; VRAM wordt ook tijdens die generatie bemonsterd. De laatste vraag stuurt `keep_alive: 0` zodat Ollama het model ontlaadt na de generatie. `nvidia-smi` wordt tijdens elke generatie iedere 0,1 seconde bevraagd, plus vlak ervoor en erna. Zo blijft de gemeten piek staan, ook als het model na de laatste generatie wordt ontladen. Elke modelrun houdt zijn eigen steekproeven bij. Schema-validiteit telt alleen antwoorden; HTTP-fouten staan apart. Valt alles weg, dan is de status `mislukt`.
 
 ### RTX 3070 (8 GB)

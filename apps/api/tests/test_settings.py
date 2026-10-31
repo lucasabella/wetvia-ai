@@ -55,10 +55,25 @@ def test_embedding_settings_have_safe_vector_defaults_and_require_positive_value
     assert settings.embedding_model == "intfloat/multilingual-e5-large-instruct"
     assert settings.embedding_dimension == 1024
     assert settings.embedding_batch_size == 32
+    assert settings.answer_abstention_tau == 0.01
     with pytest.raises(ValidationError):
         Settings(_env_file=None, embedding_dimension=0)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, embedding_batch_size=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, answer_abstention_tau=1.1)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, answer_abstention_tau=float("nan"))
+
+
+def test_answer_abstention_tau_is_configurable_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANSWER_ABSTENTION_TAU", "0.125")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.answer_abstention_tau == 0.125
 
 
 def test_asgi_app_attribute_is_built_once() -> None:
@@ -97,6 +112,7 @@ def test_build_app_injects_retriever_without_loading_embedding_model(
     assert app.state.retriever._embedder.dimension == 1024
     assert app.state.answer_pipeline._retriever is app.state.retriever
     assert app.state.answer_pipeline._provider is app.state.llm
+    assert app.state.answer_pipeline._abstention_tau == 0.01
 
 
 def test_open_retriever_exposes_public_runtime_and_closes_engine(
