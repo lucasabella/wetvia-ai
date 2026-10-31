@@ -83,7 +83,18 @@ Issues met het label `agent-ready` zijn compleet gespecificeerd, met acceptatiec
 
 ## Skelet en tooling
 
-Python 3.12 met uv (`apps/api`, `packages/nl-wetten-ingest`) en pnpm (`apps/web`). Lint en types: ruff, mypy, eslint, svelte-check en TypeScript. De SvelteKit-shell staat in `apps/web`.
+Python 3.12 met uv (`apps/api`, `packages/nl-wetten-ingest`, `eval`) en pnpm (`apps/web`). Lint en types: ruff, mypy, eslint, svelte-check en TypeScript. De SvelteKit-shell staat in `apps/web`.
+
+## Modelbenchmark
+
+De bake-off uit docs/02 §1.2 (issue #6) is `eval/bench_models.py`. Hij meet via Ollama tijd tot het eerste token, tokens/s, schema-validiteit en, als `nvidia-smi` er is, piek-VRAM. De 30 eval-vragen staan nog niet in de repo. Zonder `eval/data/bench.jsonl` schrijft het script een rapport met `niet gemeten` en downloadt het geen modellen.
+
+```bash
+ollama list
+uv run python eval/bench_models.py
+```
+
+Op een RTX 3070 komt VRAM uit `nvidia-smi`. Op een M3 (Ollama via Metal) blijft die kolom `niet beschikbaar`. Tags en de rest van de methode: [eval/README.md](eval/README.md).
 
 ```bash
 uv sync --all-packages --all-groups

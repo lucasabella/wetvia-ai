@@ -50,9 +50,10 @@ pnpm install
 
 cd apps/api && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest && uv run lint-imports
 cd ../../packages/nl-wetten-ingest && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
-cd ../.. && pnpm lint && pnpm check && pnpm test && pnpm format:check
+cd ../../eval && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
+cd .. && pnpm lint && pnpm check && pnpm test && pnpm format:check
 ```
 
 `uv run lint-imports` draait in de `api`-job van [`.github/workflows/ci.yml`](.github/workflows/ci.yml). De OpenAPI-diff-check komt met #39; de plek staat in die job.
 
-`pnpm test` draait vitest in `apps/web`. Python-tests zijn pytest in de twee workspace-members. `training/` zit niet in de uv-workspace.
+`pnpm test` draait vitest in `apps/web`. Python-tests zijn pytest in `apps/api`, `packages/nl-wetten-ingest` en `eval`. `training/` zit niet in de uv-workspace.
