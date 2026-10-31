@@ -14,6 +14,7 @@ from wetvia.citations import (
     CitationClaim,
     CitationSource,
     extract_measurements,
+    extract_quantities,
     retrieval_score_below_tau,
     verify_citations,
 )
@@ -45,6 +46,47 @@ def test_extract_measurements_normalizes_decimal_and_unit_aliases() -> None:
             (Decimal("30"), "cm²"),
         }
     )
+
+
+def test_extract_quantities_handles_dutch_counts_and_time_without_reading_ids() -> None:
+    quantities = extract_quantities(
+        "3 woningen, 18 jaar, 5 uur, 1 graad; artikel 2.29; ID 8 jaren."
+    )
+
+    assert quantities == frozenset(
+        {
+            (Decimal("3"), "woning"),
+            (Decimal("18"), "jaar"),
+            (Decimal("5"), "uur"),
+            (Decimal("1"), "graad"),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("claim_text", "unsupported_pair"),
+    [
+        ("Synthetic claim allows 3 woningen.", "3 woning"),
+        ("Synthetic claim lasts 18 jaar.", "18 jaar"),
+        ("Synthetic claim lasts 5 uur.", "5 uur"),
+        ("Synthetic claim has 1 graad.", "1 graad"),
+    ],
+)
+def test_verifier_removes_unsupported_bare_count_and_time_quantities(
+    claim_text: str,
+    unsupported_pair: str,
+) -> None:
+    source = _source(text="Synthetic source records 2 woningen, 17 jaar, 4 uur, 0 graden.")
+
+    result = verify_citations(
+        [CitationClaim(claim_text, (source.chunk_id,))],
+        {source.chunk_id: source},
+        date(2026, 10, 31),
+    )
+
+    assert result.verified_claims == ()
+    assert result.removed_count == 1
+    assert any(unsupported_pair in note for note in result.notes)
 
 
 def test_verifier_removes_point_with_mixed_known_and_unknown_source_ids() -> None:

@@ -25,11 +25,12 @@ RuntimeFactory = Callable[[], AbstractAsyncContextManager[RetrieverRuntime]]
 
 @dataclass(frozen=True, slots=True)
 class CalibrationSample:
-    """One reviewed retrieval score and expected abstention label."""
+    """One reviewed retrieval result and expected abstention label."""
 
     item_id: str
     best_score: float
     should_abstain: bool
+    no_hits: bool = False
     category: str | None = None
     expected_status: str | None = None
 
@@ -56,8 +57,9 @@ class CalibrationArtifacts:
 def calibrate_threshold(samples: Sequence[CalibrationSample]) -> TauCalibration:
     """Maximize abstention F1 over observed score boundaries in [0, 1].
 
-    A score strictly below tau predicts abstention. Ties select the lowest tau,
-    minimizing extra abstentions when their F1 is equal.
+    A score strictly below tau predicts abstention, and a no-hit result always
+    abstains independently of tau. Ties select the lowest tau, minimizing extra
+    abstentions when their F1 is equal.
     """
     if not samples:
         raise ValueError("at least one reviewed calibration sample is required")
@@ -68,6 +70,8 @@ def calibrate_threshold(samples: Sequence[CalibrationSample]) -> TauCalibration:
             raise ValueError("retrieval scores must be finite values between 0 and 1")
         if not isinstance(sample.should_abstain, bool):
             raise ValueError("expected abstention labels must be boolean")
+        if not isinstance(sample.no_hits, bool):
+            raise ValueError("no_hits must be boolean")
 
     maximum = max(sample.best_score for sample in samples)
     upper_boundary = min(1.0, math.nextafter(maximum, math.inf))
@@ -76,7 +80,7 @@ def calibrate_threshold(samples: Sequence[CalibrationSample]) -> TauCalibration:
     for tau in thresholds:
         true_positive = false_positive = false_negative = true_negative = 0
         for sample in samples:
-            predicted = sample.best_score < tau
+            predicted = sample.no_hits or sample.best_score < tau
             if predicted and sample.should_abstain:
                 true_positive += 1
             elif predicted:
@@ -141,6 +145,7 @@ async def run_calibration(
                 include_future=False,
                 mode="hybrid",
             )
+            no_hits = not hits
             best_score = max((hit.score for hit in hits), default=0.0)
             if not math.isfinite(best_score) or not 0.0 <= best_score <= 1.0:
                 raise ValueError(f"retriever returned an invalid score for eval item {item.id!r}")
@@ -149,6 +154,7 @@ async def run_calibration(
                     item_id=item.id,
                     best_score=best_score,
                     should_abstain=item.verwachte_status in _ABSTAIN_STATUSES,
+                    no_hits=no_hits,
                     category=item.categorie,
                     expected_status=item.verwachte_status,
                 )
@@ -180,6 +186,7 @@ async def run_calibration(
                 for category in sorted({item.categorie for item in eligible})
             },
             "excluded": len(excluded),
+            "no_hits": sum(sample.no_hits for sample in samples),
             "excluded_by_category": {
                 category: sum(item.categorie == category for item in excluded)
                 for category in sorted({item.categorie for item in excluded})
@@ -190,7 +197,7 @@ async def run_calibration(
             for item in excluded
         ],
         "reviewed_item_count": len(samples),
-        "threshold_rule": "best hybrid score < tau predicts abstention",
+        "threshold_rule": "no hits or best hybrid score < tau predicts abstention",
         "abstention_statuses": sorted(_ABSTAIN_STATUSES),
         "default_tau_before_calibration": _DEFAULT_TAU,
         "default_tau_status": "provisional_uncalibrated",

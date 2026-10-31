@@ -75,7 +75,8 @@ uv run python eval/calibrate_tau.py \
 
 De calibrator weigert datasets met `concept: true`, gebruikt alleen
 gecontroleerde categorie C/D/F en kiest de drempel die abstentie-F1 maximaliseert
-onder de strikte regel `hoogste hybride score < tau`. Het JSON-rapport bevat de
+onder de regel `geen hits of hoogste hybride score < tau`. Geen hits tellen
+altijd als abstentie, ook als tau nul is. Het JSON-rapport bevat de
 dataset-SHA-256, scores per item, verwarringsmatrixaantallen en beperkingen.
 Het meet geen citatie-ondersteuning of juridische juistheid. Stel de
 aanbevolen waarde in met `ANSWER_ABSTENTION_TAU`; vervang de standaard niet

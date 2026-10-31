@@ -279,11 +279,12 @@ class AnswerPipeline:
         status = draft.status
         summary = draft.samenvatting
         caveats = list(draft.voorbehouden)
+        followups = list(draft.vervolgstappen)
         verifier_notes = list(verification.notes)
         if verification.removed_count:
             summary = _summary_from_verified_points(verified_points)
-            if _REMOVAL_CAVEAT not in caveats:
-                caveats.append(_REMOVAL_CAVEAT)
+            caveats = [_REMOVAL_CAVEAT]
+            followups = []
         majority_removed = verification.strict_majority_removed
         no_verified_answered_points = status == "beantwoord" and not verified_points
         if majority_removed or no_verified_answered_points:
@@ -300,13 +301,16 @@ class AnswerPipeline:
                     "no verified points remain for an answered draft; "
                     "answer status set to uncertain"
                 )
+        elif not verification.removed_count and status != "beantwoord":
+            caveats = []
+            followups = []
 
         return VerifiedAnswer(
             status=status,
             samenvatting=summary,
             punten=verified_points,
             voorbehouden=caveats,
-            vervolgstappen=draft.vervolgstappen,
+            vervolgstappen=followups,
             peildatum=requested_date,
             verifier_notes=verifier_notes,
         )

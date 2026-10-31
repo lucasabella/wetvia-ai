@@ -56,6 +56,19 @@ def test_calibration_maximizes_abstention_f1_with_strict_tau_boundary() -> None:
     assert (result.false_negative, result.true_negative) == (0, 2)
 
 
+def test_no_hits_predicts_abstention_even_when_tau_is_zero() -> None:
+    result = calibrate_threshold(
+        [
+            CalibrationSample("missing", 0.0, True, no_hits=True),
+            CalibrationSample("zero-score-hit", 0.0, False, no_hits=False),
+        ]
+    )
+
+    assert result.tau == 0.0
+    assert result.f1 == 1.0
+    assert (result.true_positive, result.false_positive) == (1, 0)
+
+
 def test_calibration_requires_valid_samples() -> None:
     with pytest.raises(ValueError, match="at least one"):
         calibrate_threshold([])
@@ -131,10 +144,12 @@ def test_calibration_writes_a_hashed_audit_report_with_public_retriever(tmp_path
         "selected": 1,
         "selected_by_category": {"F": 1},
         "excluded": 1,
+        "no_hits": 1,
         "excluded_by_category": {"A": 1},
     }
     assert artifacts.payload["items"][0]["category"] == "F"
     assert artifacts.payload["items"][0]["expected_status"] == "onzeker"
+    assert artifacts.payload["items"][0]["no_hits"] is True
     assert artifacts.payload["metrics"]["f1"] == 1.0
     assert retriever.search_calls == [
         ("Synthetic test question, not a legal query.", date(2026, 10, 31), 8, False, "hybrid")

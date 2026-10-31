@@ -24,9 +24,10 @@ _MEASUREMENT_UNITS = (
     "millilitre",
     "liter",
     "litre",
-    "uren?",
-    "minuten?",
-    "graden?",
+    "uur|uren",
+    "minuut|minuten",
+    "seconde|seconden",
+    "graad|graden",
     "m[²2]",
     "cm[²2]",
     "m[³3]",
@@ -44,10 +45,52 @@ _MEASUREMENT_UNITS = (
     "%",
     "°c",
 )
+_BARE_QUANTITIES = (
+    "jaar",
+    "jaren",
+    "maand",
+    "maanden",
+    "week",
+    "weken",
+    "dag",
+    "dagen",
+    "woning",
+    "woningen",
+    "gebouw",
+    "gebouwen",
+    "bijgebouw",
+    "bijgebouwen",
+    "persoon",
+    "personen",
+    "mens",
+    "mensen",
+    "bouwlaag",
+    "bouwlagen",
+    "woonlaag",
+    "woonlagen",
+    "verdieping",
+    "verdiepingen",
+    "etage",
+    "etages",
+    "vergunning",
+    "vergunningen",
+)
 _UNIT_PATTERN = "|".join(sorted(_MEASUREMENT_UNITS, key=len, reverse=True))
+_BARE_QUANTITY_PATTERN = "|".join(sorted(_BARE_QUANTITIES, key=len, reverse=True))
+_NUMBER_PATTERN = r"[+-]?\d+(?:[.,]\d+)?"
 _MEASUREMENT_PATTERN = re.compile(
-    rf"(?<![\w.])(?P<number>[+-]?\d+(?:[.,]\d+)?)\s*"
+    rf"(?<![\w.-])(?P<number>{_NUMBER_PATTERN})\s*"
     rf"(?P<unit>{_UNIT_PATTERN})(?!\w)",
+    re.IGNORECASE,
+)
+_BARE_QUANTITY_RE = re.compile(
+    rf"(?<![\w.-])(?P<number>{_NUMBER_PATTERN})\s+"
+    rf"(?P<unit>{_BARE_QUANTITY_PATTERN})(?!\w)",
+    re.IGNORECASE,
+)
+_IDENTIFIER_PREFIX = re.compile(
+    r"(?:artikel(?:nummer)?|art\.?|hoofdstuk|paragraaf|lid|onderdeel|bijlage|"
+    r"ecli|bwb(?:[- ]?id)?|id|nr\.?|nummer)\s*(?:[:#]\s*)?\Z",
     re.IGNORECASE,
 )
 _ISO_DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
@@ -72,8 +115,38 @@ _UNIT_ALIASES = {
     "uren": "uur",
     "minuut": "minuut",
     "minuten": "minuut",
+    "seconde": "seconde",
+    "seconden": "seconde",
     "graad": "graad",
     "graden": "graad",
+    "jaar": "jaar",
+    "jaren": "jaar",
+    "maand": "maand",
+    "maanden": "maand",
+    "week": "week",
+    "weken": "week",
+    "dag": "dag",
+    "dagen": "dag",
+    "woning": "woning",
+    "woningen": "woning",
+    "gebouw": "gebouw",
+    "gebouwen": "gebouw",
+    "bijgebouw": "bijgebouw",
+    "bijgebouwen": "bijgebouw",
+    "persoon": "persoon",
+    "personen": "persoon",
+    "mens": "mens",
+    "mensen": "mens",
+    "bouwlaag": "bouwlaag",
+    "bouwlagen": "bouwlaag",
+    "woonlaag": "woonlaag",
+    "woonlagen": "woonlaag",
+    "verdieping": "verdieping",
+    "verdiepingen": "verdieping",
+    "etage": "etage",
+    "etages": "etage",
+    "vergunning": "vergunning",
+    "vergunningen": "vergunning",
     "m2": "m²",
     "cm2": "cm²",
     "m3": "m³",
@@ -139,21 +212,40 @@ def parse_iso_date(value: date | str) -> date | None:
     return parsed if parsed.isoformat() == value else None
 
 
+def extract_quantities(text: str) -> frozenset[tuple[Decimal, str]]:
+    """Return normalized numeric measurements, counts, and time quantities.
+
+    Bare quantities use a short legal-domain noun allowlist; arbitrary number/noun
+    pairs are excluded so article references and identifiers do not become claims.
+    """
+    quantities: set[tuple[Decimal, str]] = set()
+    for pattern in (_MEASUREMENT_PATTERN, _BARE_QUANTITY_RE):
+        for match in pattern.finditer(text):
+            if _identifier_precedes(text, match.start()):
+                continue
+            quantity = _normalized_quantity(match.group("number"), match.group("unit"))
+            if quantity is not None:
+                quantities.add(quantity)
+    return frozenset(quantities)
+
+
 def extract_measurements(text: str) -> frozenset[tuple[Decimal, str]]:
-    """Return normalized explicit number/unit pairs, ignoring bare article numbers."""
-    measurements: set[tuple[Decimal, str]] = set()
-    for match in _MEASUREMENT_PATTERN.finditer(text):
-        try:
-            number = Decimal(match.group("number").replace(",", "."))
-        except InvalidOperation:
-            continue
-        if not number.is_finite():
-            continue
-        normalized_number = number.normalize()
-        unit_text = match.group("unit").casefold()
-        unit = _UNIT_ALIASES.get(unit_text, unit_text)
-        measurements.add((normalized_number, unit))
-    return frozenset(measurements)
+    """Backward-compatible name for normalized numeric quantity extraction."""
+    return extract_quantities(text)
+
+
+def _normalized_quantity(number_text: str, unit_text: str) -> tuple[Decimal, str] | None:
+    try:
+        number = Decimal(number_text.replace(",", "."))
+    except InvalidOperation:
+        return None
+    if not number.is_finite():
+        return None
+    return number.normalize(), _UNIT_ALIASES.get(unit_text.casefold(), unit_text.casefold())
+
+
+def _identifier_precedes(text: str, number_start: int) -> bool:
+    return _IDENTIFIER_PREFIX.search(text[max(0, number_start - 40) : number_start]) is not None
 
 
 def verify_citations(
@@ -163,7 +255,7 @@ def verify_citations(
 ) -> VerificationResult:
     """Drop claims without known, date-valid, non-repealed supporting sources.
 
-    Every explicit number/measurement pair in a claim must occur in at least one
+    Every explicit number/quantity pair in a claim must occur in at least one
     retained cited chunk. This is a narrow lexical check, not semantic entailment.
     """
     requested_date = parse_iso_date(peildatum)
@@ -230,13 +322,13 @@ def verify_citations(
             removed += 1
             continue
 
-        asserted_measurements = extract_measurements(claim.text)
-        source_measurements = frozenset(
+        asserted_quantities = extract_quantities(claim.text)
+        source_quantities = frozenset(
             measurement
             for source in retained_sources
-            for measurement in extract_measurements(source.text)
+            for measurement in extract_quantities(source.text)
         )
-        unsupported = asserted_measurements - source_measurements
+        unsupported = asserted_quantities - source_quantities
         if unsupported:
             formatted = ", ".join(
                 f"{_format_decimal(number)} {unit}"
@@ -273,6 +365,7 @@ __all__ = [
     "VerificationResult",
     "VerifiedClaim",
     "extract_measurements",
+    "extract_quantities",
     "parse_iso_date",
     "retrieval_score_below_tau",
     "verify_citations",

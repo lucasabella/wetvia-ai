@@ -243,6 +243,65 @@ def test_verifier_removes_unsupported_points_and_rebuilds_stale_summary() -> Non
     assert "verifier_notes" not in provider.calls[0][1].model_fields
 
 
+def test_removed_points_clear_generated_caveats_and_followups() -> None:
+    source = _source(text="Synthetic source records 1.75 m.")
+    reply = json.dumps(
+        {
+            "status": "beantwoord",
+            "samenvatting": "Synthetic answer states 1.75 m and 3 woningen.",
+            "punten": [
+                {"tekst": "Synthetic point states 1.75 m.", "bron_ids": ["[1]"]},
+                {"tekst": "Synthetic point states 3 woningen.", "bron_ids": ["[1]"]},
+            ],
+            "voorbehouden": ["Synthetic caveat repeats that 3 woningen are allowed."],
+            "vervolgstappen": [
+                {
+                    "tekst": "Request a permit for 3 woningen.",
+                    "url": "https://example.test/permit",
+                }
+            ],
+            "peildatum": "2026-10-31",
+        }
+    )
+    pipeline, _retriever, _provider = _pipeline([source], [reply])
+
+    answer = asyncio.run(pipeline.answer("synthetic question", date(2026, 10, 31)))
+
+    assert answer.status == "beantwoord"  # exactly half the points were removed
+    assert [point.tekst for point in answer.punten] == ["Synthetic point states 1.75 m."]
+    assert "3 woningen" not in answer.samenvatting
+    assert answer.voorbehouden == [
+        "Een of meer beweringen zijn weggelaten omdat de bron ze niet bevestigde."
+    ]
+    assert answer.vervolgstappen == []
+
+
+def test_model_abstention_clears_unverified_caveats_and_followups() -> None:
+    source = _source()
+    reply = json.dumps(
+        {
+            "status": "onzeker",
+            "samenvatting": "Synthetic uncertain answer.",
+            "punten": [],
+            "voorbehouden": ["Synthetic caveat mentions 3 woningen."],
+            "vervolgstappen": [
+                {
+                    "tekst": "Apply for 3 woningen.",
+                    "url": "https://example.test/permit",
+                }
+            ],
+            "peildatum": "2026-10-31",
+        }
+    )
+    pipeline, _retriever, _provider = _pipeline([source], [reply])
+
+    answer = asyncio.run(pipeline.answer("synthetic question", date(2026, 10, 31)))
+
+    assert answer.status == "onzeker"
+    assert answer.voorbehouden == []
+    assert answer.vervolgstappen == []
+
+
 def test_source_budget_truncates_unicode_chunks_deterministically() -> None:
     sources = [_source(i, text=("😀 synthetic unicode passage " * 80)) for i in range(1, 4)]
     response = _reply(["[1]", "[2]", "[3]"])
