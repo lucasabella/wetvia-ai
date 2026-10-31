@@ -3,6 +3,8 @@ node_modules/
 .svelte-kit/
 build/
 .output/
+apps/web/test-results/
+apps/web/playwright-report/
 
 # Python
 __pycache__/

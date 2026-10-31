@@ -1,8 +1,12 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
+  import { env } from "$env/dynamic/public";
+  import { createWetviaClient, streamChatEvents } from "@wetvia/api-client";
   import LibraryIcon from "@lucide/svelte/icons/library";
   import MenuIcon from "@lucide/svelte/icons/menu";
   import ChatPanel from "$lib/features/chat/chat-panel.svelte";
+  import { ChatStore } from "$lib/features/chat/chat.svelte";
+  import { SourcesStore } from "$lib/features/sources/sources.svelte";
   import SourcesPanel from "$lib/features/sources/sources-panel.svelte";
   import LeftColumn from "$lib/shell/left-column.svelte";
   import { DESKTOP_MEDIA_QUERY, sheetStaysOpen } from "$lib/shell/sheets";
@@ -11,6 +15,23 @@
 
   let historyOpen = $state(false);
   let sourcesOpen = $state(false);
+  const sources = new SourcesStore();
+  const apiClient = createWetviaClient({
+    baseUrl: env.PUBLIC_API_BASE_URL?.trim() || "",
+  });
+  const chat = new ChatStore(
+    (request, options) => streamChatEvents(apiClient, request, options),
+    sources,
+  );
+
+  function selectSource(turnId: string, chunkId: string): void {
+    if (
+      chat.selectSource(turnId, chunkId) &&
+      window.matchMedia("(max-width: 767px)").matches
+    ) {
+      sourcesOpen = true;
+    }
+  }
 
   $effect(() => {
     const media = window.matchMedia(DESKTOP_MEDIA_QUERY);
@@ -24,7 +45,7 @@
   });
 </script>
 
-<div class="flex min-h-dvh flex-col bg-background text-foreground">
+<div class="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
   <a
     href="#inhoud"
     class="sr-only bg-background text-foreground focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:px-3 focus:py-2 focus:ring-2 focus:ring-ring"
@@ -39,6 +60,7 @@
       variant="outline"
       size="icon"
       aria-expanded={historyOpen}
+      aria-controls="geschiedenis-sheet"
       onclick={() => (historyOpen = true)}
     >
       <MenuIcon />
@@ -52,6 +74,7 @@
       variant="outline"
       class="ml-auto"
       aria-expanded={sourcesOpen}
+      aria-controls="bronnen-sheet"
       onclick={() => (sourcesOpen = true)}
     >
       <LibraryIcon />
@@ -68,15 +91,17 @@
     >
       <LeftColumn />
     </aside>
-    <main id="inhoud" class="min-w-0 p-4">
-      <ChatPanel />
+    <main id="inhoud" class="min-h-0 min-w-0 p-3 md:p-4">
+      <ChatPanel {chat} onSourceSelect={selectSource} />
     </main>
     <aside
-      class="hidden border-l border-border p-4 md:block"
+      class="hidden min-h-0 flex-col border-l border-border p-4 md:flex"
       aria-labelledby="bronnen-kop"
     >
-      <h2 id="bronnen-kop" class="mb-3 text-sm font-medium">Bronnen</h2>
-      <SourcesPanel labelledBy="bronnen-kop" />
+      <h2 id="bronnen-kop" class="mb-3 shrink-0 text-sm font-medium">
+        Bronnen
+      </h2>
+      <SourcesPanel {sources} labelledBy="bronnen-kop" idPrefix="desktop-" />
     </aside>
   </div>
 </div>
@@ -103,6 +128,6 @@
     <Sheet.Header>
       <Sheet.Title id="bronnen-sheet-kop">Bronnen</Sheet.Title>
     </Sheet.Header>
-    <SourcesPanel labelledBy="bronnen-sheet-kop" />
+    <SourcesPanel {sources} labelledBy="bronnen-sheet-kop" idPrefix="mobile-" />
   </Sheet.Content>
 </Sheet.Root>

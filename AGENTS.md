@@ -14,6 +14,7 @@ cd apps/api && uv run ruff check && uv run ruff format --check && uv run mypy sr
 cd packages/nl-wetten-ingest && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
 cd eval && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
 pnpm lint && pnpm check && pnpm test && pnpm format:check
+pnpm --filter @wetvia/web exec playwright install chromium && pnpm --filter @wetvia/web test:browser
 
 cp .env.example .env
 docker compose up -d db
@@ -21,7 +22,7 @@ docker compose up -d db
 
 `docker compose up` start alleen `db`. `api` en `web` hebben een profiel zolang hun Dockerfile er niet is. `worker` heeft profiel `ingest`. `ollama` heeft profiel `gpu-linux`.
 
-CI staat in `.github/workflows/ci.yml`: aparte jobs voor `api` (inclusief OpenAPI/client-generatie en diff-check, `uv run lint-imports` en Postgres + pgvector), `nl-wetten-ingest`, `web` en `eval`. De OpenAPI-export start geen database of model. De modelbenchmark draait niet in CI.
+CI staat in `.github/workflows/ci.yml`: aparte jobs voor `api` (inclusief OpenAPI/client-generatie en diff-check, `uv run lint-imports` en Postgres + pgvector), `nl-wetten-ingest`, `web` (inclusief Chromium/Playwright/axe) en `eval`. De OpenAPI-export start geen database of model. De modelbenchmark draait niet in CI.
 
 ## Grenzen
 

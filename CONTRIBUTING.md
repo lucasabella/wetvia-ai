@@ -52,11 +52,13 @@ cd apps/api && uv run ruff check && uv run ruff format --check && uv run mypy sr
 cd ../../packages/nl-wetten-ingest && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
 cd ../../eval && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
 cd .. && pnpm lint && pnpm check && pnpm test && pnpm format:check
+pnpm --filter @wetvia/web exec playwright install chromium
+pnpm --filter @wetvia/web test:browser
 ```
 
 `uv run lint-imports` draait in de `api`-job van [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Die job voert ook de OpenAPI-export-, gegenereerde-types-, typecheck- en clienttests uit en faalt bij een diff.
 
-`pnpm test` draait vitest in `apps/web`. Python-tests zijn pytest in `apps/api`, `packages/nl-wetten-ingest` en `eval`. `training/` zit niet in de uv-workspace.
+`pnpm test` draait vitest in `apps/web`. `pnpm --filter @wetvia/web test:browser` draait de Chromium/axe-controles op desktop en mobiel; de browser gebruikt synthetische SSE-fixtures en heeft geen API of model nodig. Python-tests zijn pytest in `apps/api`, `packages/nl-wetten-ingest` en `eval`. `training/` zit niet in de uv-workspace.
 
 ## OpenAPI en TypeScript-client
 
