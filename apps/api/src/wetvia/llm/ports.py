@@ -1,6 +1,7 @@
 """LLM port. Adapters and settings live elsewhere."""
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
+from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -14,8 +15,16 @@ class ChatMessage(TypedDict):
     content: str
 
 
+@dataclass(frozen=True)
+class StreamMetrics:
+    """Generation usage reported by providers that expose stream metrics."""
+
+    completion_tokens: int | None
+    generation_seconds: float | None
+
+
 class LLMProvider(Protocol):
-    """Chat completion. ``stream`` yields text only when ``schema`` is None."""
+    """Chat completion. Streamed schema responses are raw chunks, not prevalidated models."""
 
     async def chat(
         self,
@@ -23,6 +32,11 @@ class LLMProvider(Protocol):
         schema: type[ModelT] | None,
         stream: bool,
         temperature: float,
+        *,
+        on_metrics: Callable[[StreamMetrics], None] | None = None,
     ) -> ModelT | str | AsyncIterator[str]:
-        """Return a validated model, the full text, or an async iterator of text chunks."""
+        """Return a model, full text, or raw chunks.
+
+        Callers validate the complete output of a schema-constrained stream.
+        """
         ...

@@ -12,13 +12,13 @@ import respx
 from openai import APIStatusError
 from pydantic import BaseModel, Field, ValidationError
 
-from wetvia.bootstrap import get_provider
+from wetvia.bootstrap import get_ollama_provider, get_provider
 from wetvia.config import Settings
 from wetvia.core import LlmProvider
+from wetvia.llm import ChatMessage, StreamMetrics
 from wetvia.llm.adapters.fake import FakeProvider
 from wetvia.llm.adapters.ollama import OllamaProvider
 from wetvia.llm.adapters.openai_compat import OpenAICompatProvider, strict_json_schema
-from wetvia.llm.ports import ChatMessage
 
 _LLM_ROOT = Path(__file__).resolve().parents[1] / "src" / "wetvia" / "llm"
 
@@ -546,6 +546,78 @@ def test_openai_streams_text_chunks() -> None:
     assert asyncio.run(run()) == ["Hel", "lo"]
 
 
+def test_openai_schema_stream_sets_strict_json_schema() -> None:
+    body = b"".join(
+        [
+            _sse(_openai_chunk('{"value":"ok"}')),
+            _sse(_openai_chunk(None, done=True)),
+            b"data: [DONE]\n\n",
+        ]
+    )
+
+    async def run() -> tuple[list[str], dict[str, object]]:
+        with respx.mock:
+            route = respx.post("http://llm.test/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    200,
+                    content=body,
+                    headers={"content-type": "text/event-stream"},
+                )
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            stream = await provider.chat(_messages(), Probe, True, 0.0)
+            assert isinstance(stream, AsyncIterator)
+            chunks = [chunk async for chunk in stream]
+        request = json.loads(route.calls[0].request.content)
+        return chunks, request
+
+    chunks, request = asyncio.run(run())
+    assert chunks == ['{"value":"ok"}']
+    response_format = request["response_format"]
+    assert response_format["type"] == "json_schema"
+    assert response_format["json_schema"]["strict"] is True
+
+
+def test_ollama_stream_reports_metrics_and_explicit_options() -> None:
+    raw = (
+        '{"message":{"role":"assistant","content":"{\\"value\\":\\"ok\\"}"},"done":false}\n'
+        '{"done":true,"eval_count":12,"eval_duration":3000000000}\n'
+    )
+
+    async def run() -> tuple[list[str], list[StreamMetrics], dict[str, object]]:
+        with respx.mock:
+            route = respx.post("http://ollama.test/api/chat").mock(
+                return_value=httpx.Response(200, text=raw)
+            )
+            provider = get_ollama_provider(
+                base_url="http://ollama.test",
+                model="dummy-model",
+                num_ctx=16384,
+                keep_alive=0,
+                think=False,
+            )
+            metrics: list[StreamMetrics] = []
+            stream = await provider.chat(
+                _messages(),
+                Probe,
+                True,
+                0.0,
+                on_metrics=metrics.append,
+            )
+            assert isinstance(stream, AsyncIterator)
+            chunks = [chunk async for chunk in stream]
+        body = json.loads(route.calls[0].request.content)
+        return chunks, metrics, body
+
+    chunks, metrics, body = asyncio.run(run())
+    assert chunks == ['{"value":"ok"}']
+    assert metrics == [StreamMetrics(completion_tokens=12, generation_seconds=3.0)]
+    assert body["options"] == {"temperature": 0.0, "num_ctx": 16384}
+    assert body["keep_alive"] == 0
+    assert body["think"] is False
+    assert body["format"]["title"] == "Probe"
+
+
 def test_fake_validates_and_streams_without_http() -> None:
     async def run() -> tuple[Probe, list[str]]:
         provider = FakeProvider(["not-json", '{"value":"ok"}'], chunks=["a", "b"])
@@ -561,10 +633,11 @@ def test_fake_validates_and_streams_without_http() -> None:
     assert chunks == ["a", "b"]
 
 
-def test_schema_and_stream_cannot_be_combined() -> None:
-    async def run() -> None:
-        provider = FakeProvider(['{"value":"ok"}'])
-        with pytest.raises(ValueError, match="schema and stream"):
-            await provider.chat(_messages(), Probe, True, 0.0)
+def test_fake_schema_stream_returns_raw_chunks_without_validating() -> None:
+    async def run() -> list[str]:
+        provider = FakeProvider([], chunks=['{"value":"ok"}'])
+        stream = await provider.chat(_messages(), Probe, True, 0.0)
+        assert isinstance(stream, AsyncIterator)
+        return [chunk async for chunk in stream]
 
-    asyncio.run(run())
+    assert asyncio.run(run()) == ['{"value":"ok"}']

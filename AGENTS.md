@@ -12,6 +12,7 @@ pnpm install
 
 cd apps/api && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest && uv run lint-imports
 cd packages/nl-wetten-ingest && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
+cd eval && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
 pnpm lint && pnpm check && pnpm test && pnpm format:check
 
 cp .env.example .env
@@ -20,7 +21,7 @@ docker compose up -d db
 
 `docker compose up` start alleen `db`. `api` en `web` hebben een profiel zolang hun Dockerfile er niet is. `worker` heeft profiel `ingest`. `ollama` heeft profiel `gpu-linux`.
 
-CI staat in `.github/workflows/ci.yml`: aparte jobs voor `api` (inclusief `uv run lint-imports` en Postgres + pgvector), `nl-wetten-ingest` en `web`. De OpenAPI-check van #39 is daar gemarkeerd en nog niet actief.
+CI staat in `.github/workflows/ci.yml`: aparte jobs voor `api` (inclusief `uv run lint-imports` en Postgres + pgvector), `nl-wetten-ingest`, `web` en `eval`. De OpenAPI-check van #39 is daar gemarkeerd en nog niet actief. De modelbenchmark draait niet in CI.
 
 ## Grenzen
 

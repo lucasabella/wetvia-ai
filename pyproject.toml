@@ -1,10 +1,11 @@
 # Virtual uv-workspace. The root is not a package.
-# Members: apps/api (AGPL-3.0-only) and packages/nl-wetten-ingest (Apache-2.0).
+# Members: apps/api (AGPL-3.0-only), packages/nl-wetten-ingest (Apache-2.0),
+# eval (wetvia-eval, AGPL-3.0-only; data/ is CC BY 4.0).
 # training/ is not a member. Torch and Unsloth clash with the API dependencies,
 # and a workspace shares one lockfile. See the README.
 
 [tool.uv.workspace]
-members = ["apps/api", "packages/nl-wetten-ingest"]
+members = ["apps/api", "packages/nl-wetten-ingest", "eval"]
 
 [dependency-groups]
 dev = [
@@ -23,11 +24,11 @@ extend-exclude = [".venv", "node_modules"]
 select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["nl_wetten_ingest", "wetvia"]
+known-first-party = ["nl_wetten_ingest", "wetvia", "wetvia_eval"]
 
 [tool.ruff.format]
 quote-style = "double"
 
 [tool.pytest.ini_options]
-testpaths = ["apps/api/tests", "packages/nl-wetten-ingest/tests"]
+testpaths = ["apps/api/tests", "packages/nl-wetten-ingest/tests", "eval/tests"]
 addopts = ["-q"]

@@ -1,3 +1,3 @@
 # eval/reports
 
-Gegenereerde eval-rapporten. Nog geen rapport in het skelet.
+`bench-template.md` is het lege sjabloon. `bench-<datum>.md` schrijft `eval/bench_models.py` pas als je het script draait. Commit geen rapport met verzonnen cijfers.
