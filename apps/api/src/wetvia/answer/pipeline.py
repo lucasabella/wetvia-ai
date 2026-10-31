@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import html
 import math
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from importlib.resources import files
 from typing import Any, Literal, Protocol, cast
@@ -24,6 +25,9 @@ from wetvia.retrieval import Retriever, ScoredChunk, SourceDocument
 
 MAX_SOURCE_TOKENS = 8000
 MAX_SOURCES = 8
+MAX_HISTORY_MESSAGES = 12
+MAX_HISTORY_CHARS = 8000
+MAX_RETRIEVAL_QUERY_CHARS = 4000
 ANSWER_TEMPERATURE = 0.2
 DEFAULT_ABSTENTION_TAU = 0.01
 ANSWER_SEARCH_MODE: Literal["hybrid"] = "hybrid"
@@ -55,6 +59,18 @@ class AnswerDateMismatchError(ValueError):
 
 class UnknownSourceLabelError(ValueError):
     """The model cited a label that was not assigned to a sent source."""
+
+
+@dataclass(frozen=True, slots=True)
+class IncludedAnswerSource:
+    """One source that received a prompt label and was included in model context."""
+
+    label: str
+    source: SourceDocument
+    score: float
+
+
+IncludedSourcesHook = Callable[[Sequence[IncludedAnswerSource]], Awaitable[None]]
 
 
 def _validate_summary(value: str) -> str:
@@ -184,26 +200,40 @@ class AnswerPipeline:
         self._abstention_tau = abstention_tau
         self._system_prompt = system_prompt or _load_prompt()
 
-    async def answer(self, vraag: str, peildatum: date | str) -> VerifiedAnswer:
+    async def answer(
+        self,
+        vraag: str,
+        peildatum: date | str,
+        *,
+        history: Sequence[ChatMessage] = (),
+        on_sources: IncludedSourcesHook | None = None,
+    ) -> VerifiedAnswer:
         """Retrieve, generate, and verify an answer with source-linked claims."""
         requested_date = _validate_peildatum(peildatum)
         if not vraag.strip():
             raise ValueError("vraag mag niet leeg zijn")
+        if len(vraag.strip()) > MAX_RETRIEVAL_QUERY_CHARS:
+            raise ValueError(f"vraag mag maximaal {MAX_RETRIEVAL_QUERY_CHARS} tekens bevatten")
 
+        retrieval_query = _build_retrieval_query(vraag.strip(), history)
         retrieved = await self._retriever.search(
-            vraag.strip(),
+            retrieval_query,
             requested_date,
             k=MAX_SOURCES,
             include_future=False,
             mode=ANSWER_SEARCH_MODE,
         )
         if not retrieved:
+            if on_sources is not None:
+                await on_sources(())
             return _uncertain_without_sources(
                 requested_date,
                 verifier_notes=("retrieval returned no sources",),
             )
         best_score = max(result.score for result in retrieved)
         if retrieval_score_below_tau(best_score, self._abstention_tau):
+            if on_sources is not None:
+                await on_sources(())
             return _uncertain_without_sources(
                 requested_date,
                 caveat=(
@@ -214,14 +244,16 @@ class AnswerPipeline:
                     f"{self._abstention_tau:.6g}",
                 ),
             )
-        source_context, label_to_source = self._source_context(retrieved)
+        source_context, label_to_source, included_sources = self._source_context(retrieved)
+        if on_sources is not None:
+            await on_sources(included_sources)
         if not label_to_source:
             return _uncertain_without_sources(
                 requested_date,
                 verifier_notes=("no usable source text fit in the source-context budget",),
             )
 
-        messages = self._messages(vraag.strip(), requested_date, source_context)
+        messages = self._messages(vraag.strip(), requested_date, source_context, history)
         schema = _draft_schema(tuple(label_to_source))
         draft = await self._provider.chat(
             messages,
@@ -322,7 +354,9 @@ class AnswerPipeline:
         vraag: str,
         peildatum: date,
         source_context: str,
+        history: Sequence[ChatMessage] = (),
     ) -> list[ChatMessage]:
+        bounded_history = _bound_history(history)
         user_content = (
             f"Peildatum: {peildatum.isoformat()}\n"
             f"Vraag: {vraag}\n\n"
@@ -332,25 +366,29 @@ class AnswerPipeline:
         )
         return [
             ChatMessage(role="system", content=self._system_prompt),
+            *bounded_history,
             ChatMessage(role="user", content=user_content),
         ]
 
     def _source_context(
         self,
         retrieved: Sequence[ScoredChunk],
-    ) -> tuple[str, dict[str, UUID]]:
+    ) -> tuple[str, dict[str, UUID], tuple[IncludedAnswerSource, ...]]:
         candidates: list[SourceDocument] = []
+        score_by_id: dict[UUID, float] = {}
         seen_source_ids: set[UUID] = set()
         for result in retrieved[:MAX_SOURCES]:
             source = result.source
             if source.tekst.strip() and source.chunk_id not in seen_source_ids:
                 candidates.append(source)
+                score_by_id[source.chunk_id] = result.score
                 seen_source_ids.add(source.chunk_id)
         if not candidates:
-            return "", {}
+            return "", {}, ()
 
         blocks: list[str] = []
         label_to_source: dict[str, UUID] = {}
+        included_sources: list[IncludedAnswerSource] = []
         used = 0
         for index, source in enumerate(candidates):
             remaining_slots = len(candidates) - index
@@ -376,7 +414,10 @@ class AnswerPipeline:
                 continue
             blocks.append(block)
             label_to_source[label] = source.chunk_id
-        return "\n\n".join(blocks), label_to_source
+            included_sources.append(
+                IncludedAnswerSource(label, source, score_by_id[source.chunk_id])
+            )
+        return "\n\n".join(blocks), label_to_source, tuple(included_sources)
 
     def _fit_source(self, source: SourceDocument, label: str, budget: int) -> str | None:
         metadata = source.metadata
@@ -452,6 +493,53 @@ def _truncate_at_boundary(text: str, limit: int) -> str:
     return prefix
 
 
+def _bound_history(history: Sequence[ChatMessage]) -> list[ChatMessage]:
+    """Keep a bounded suffix of user/assistant history in chronological order."""
+    if any(message["role"] not in {"user", "assistant"} for message in history):
+        raise ValueError("conversation history may contain only user and assistant messages")
+    candidates = list(history[-MAX_HISTORY_MESSAGES:])
+    selected_reversed: list[ChatMessage] = []
+    remaining = MAX_HISTORY_CHARS
+    for message in reversed(candidates):
+        role = message["role"]
+        content = message["content"].strip()
+        if not content:
+            continue
+        if remaining <= 0:
+            break
+        if len(content) > remaining:
+            content = content[-remaining:]
+        selected_reversed.append(ChatMessage(role=role, content=content))
+        remaining -= len(content)
+        if len(content) < len(message["content"].strip()):
+            break
+    return list(reversed(selected_reversed))
+
+
+def _build_retrieval_query(vraag: str, history: Sequence[ChatMessage]) -> str:
+    """Add recent user turns as bounded retrieval context, never assistant claims."""
+    if len(vraag) > MAX_RETRIEVAL_QUERY_CHARS:
+        raise ValueError(f"vraag mag maximaal {MAX_RETRIEVAL_QUERY_CHARS} tekens bevatten")
+    remaining = MAX_RETRIEVAL_QUERY_CHARS - len(vraag)
+    selected_reversed: list[str] = []
+    for message in reversed(history[-MAX_HISTORY_MESSAGES:]):
+        if message["role"] != "user":
+            continue
+        content = message["content"].strip()
+        if not content:
+            continue
+        allowance = remaining - 1  # one newline before this turn/current question
+        if allowance <= 0:
+            break
+        if len(content) > allowance:
+            content = content[-allowance:]
+        selected_reversed.append(content)
+        remaining -= len(content) + 1
+        if remaining <= 0 or len(content) < len(message["content"].strip()):
+            break
+    return "\n".join((*reversed(selected_reversed), vraag))
+
+
 def _uncertain_without_sources(
     peildatum: date,
     *,
@@ -488,10 +576,15 @@ __all__ = [
     "ANSWER_SEARCH_MODE",
     "ANSWER_TEMPERATURE",
     "DEFAULT_ABSTENTION_TAU",
+    "MAX_HISTORY_CHARS",
+    "MAX_HISTORY_MESSAGES",
+    "MAX_RETRIEVAL_QUERY_CHARS",
     "MAX_SOURCES",
     "MAX_SOURCE_TOKENS",
     "AnswerDateMismatchError",
     "AnswerPipeline",
+    "IncludedAnswerSource",
+    "IncludedSourcesHook",
     "SourceTokenCounter",
     "UnknownSourceLabelError",
     "Utf8ByteUpperBoundCounter",
