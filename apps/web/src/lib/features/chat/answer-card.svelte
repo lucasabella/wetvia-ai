@@ -76,7 +76,7 @@
           Voorbehouden
         </h3>
         <ul class="list-disc space-y-1 pl-5 text-sm">
-          {#each turn.answer.voorbehouden as caveat (`${turn.id}-${caveat}`)}
+          {#each turn.answer.voorbehouden as caveat, caveatIndex (`${turn.id}-caveat-${caveatIndex}`)}
             <li>{caveat}</li>
           {/each}
         </ul>
@@ -89,7 +89,7 @@
           Vervolgstappen
         </h3>
         <ul class="list-disc space-y-1 pl-5 text-sm">
-          {#each turn.answer.vervolgstappen as step (`${turn.id}-${step.url}`)}
+          {#each turn.answer.vervolgstappen as step, stepIndex (`${turn.id}-step-${stepIndex}`)}
             <li>
               <!-- eslint-disable svelte/no-navigation-without-resolve -->
               <a

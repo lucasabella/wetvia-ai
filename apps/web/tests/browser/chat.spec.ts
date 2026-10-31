@@ -50,13 +50,21 @@ test("chat, source citation, keyboard input and axe", async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByText("Synthetic supported point.")).toBeVisible();
   await expect(
-    page.getByText("Synthetic caveat for browser testing."),
-  ).toBeVisible();
+    page.getByText("Synthetic caveat for browser testing.", { exact: true }),
+  ).toHaveCount(2);
+  const followUpLinks = page.getByRole("link", {
+    name: /Synthetic follow-up link/,
+  });
+  await expect(followUpLinks).toHaveCount(2);
+  await expect(followUpLinks.first()).toHaveAttribute(
+    "href",
+    "https://example.test/synthetic-follow-up",
+  );
   await expect(
-    page.getByRole("link", {
-      name: "Synthetic follow-up link (opent in een nieuw tabblad)",
+    page.getByText("Synthetic verifier diagnostic must stay server-side.", {
+      exact: true,
     }),
-  ).toHaveAttribute("href", "https://example.test/synthetic-follow-up");
+  ).toHaveCount(0);
   await expect(
     page
       .getByRole("region", { name: "Antwoord" })
@@ -232,18 +240,27 @@ async function mockChat(
         ? []
         : [{ tekst: "Synthetic supported point.", bron_ids: [chunkId] }],
     voorbehouden:
-      status === "beantwoord" ? ["Synthetic caveat for browser testing."] : [],
+      status === "beantwoord"
+        ? [
+            "Synthetic caveat for browser testing.",
+            "Synthetic caveat for browser testing.",
+          ]
+        : [],
     vervolgstappen:
       status === "beantwoord"
         ? [
             {
-              tekst: "Synthetic follow-up link",
+              tekst: "Synthetic follow-up link 1",
+              url: "https://example.test/synthetic-follow-up",
+            },
+            {
+              tekst: "Synthetic follow-up link 2",
               url: "https://example.test/synthetic-follow-up",
             },
           ]
         : [],
     peildatum: "2026-10-31",
-    verifier_notes: [],
+    verifier_notes: ["Synthetic verifier diagnostic must stay server-side."],
   };
   const events: ChatEvent[] = [
     { type: "sources", sources: status === "buiten_scope" ? [] : [source] },
