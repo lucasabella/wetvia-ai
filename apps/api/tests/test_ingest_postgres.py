@@ -8,6 +8,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, cast
+from uuid import NAMESPACE_URL, uuid5
 
 import httpx
 import pytest
@@ -34,16 +35,21 @@ class _OfficialFixtureSource:
         self.history = history
         self.xml = xml
         self.current = next(state for state in history if classify(state, _PEILDATUM) == "geldend")
+        self.changed = [self.current]
+        self.search_calls: list[str] = []
+        self.fetch_calls: list[str] = []
 
     def search_toestanden(self, bwb_id: str) -> list[Toestand]:
         assert bwb_id == _BWB_ID
+        self.search_calls.append(bwb_id)
         return list(self.history)
 
     def changed_since(self, datum: date | str) -> list[Toestand]:
-        return [self.current]
+        return list(self.changed)
 
     def fetch_toestand_xml(self, toestand: Toestand) -> bytes:
         assert toestand.toestand_url == self.current.toestand_url
+        self.fetch_calls.append(toestand.toestand_url)
         return self.xml
 
 
@@ -272,6 +278,67 @@ def test_postgres_migration_and_ingest_upserts_real_official_fixture(
                     )
                     == sync_report.chunks
                 )
+
+            # Date passage alone moves the stored future state to geldend and
+            # its predecessor to vervallen, even if SRU reports no changes.
+            async with sessions.begin() as session:
+                await session.execute(
+                    update(ChunkRecord)
+                    .where(
+                        ChunkRecord.toestand_url == source.current.toestand_url,
+                        ChunkRecord.artikel_status == "geldend",
+                    )
+                    .values(status="toekomstig")
+                )
+                session.add(
+                    ChunkRecord(
+                        id=uuid5(NAMESPACE_URL, f"{predecessor.toestand_url}#status-test"),
+                        toestand_url=predecessor.toestand_url,
+                        chunk_index=0,
+                        bwb_id=_BWB_ID,
+                        regeling_titel="Synthetic status test row",
+                        artikel="status-test",
+                        lid=None,
+                        onderdeel=None,
+                        opschrift=None,
+                        kop_pad="Synthetic status test row",
+                        tekst="Synthetic status transition assertion; not legal text.",
+                        geldig_vanaf=predecessor.geldig_vanaf,
+                        geldig_tot=predecessor.geldig_tot,
+                        bron_url=predecessor.toestand_url,
+                        artikel_status="geldend",
+                        status="geldend",
+                    )
+                )
+
+            searches_before_status_sync = len(source.search_calls)
+            fetches_before_status_sync = len(source.fetch_calls)
+            source.changed = []
+            status_sync = await IngestService(sessions, source).sync(
+                peildatum=source.current.geldig_vanaf
+            )
+            assert status_sync.bwb_ids == ()
+            assert len(source.search_calls) == searches_before_status_sync
+            assert len(source.fetch_calls) == fetches_before_status_sync
+            async with sessions() as session:
+                previous_status = await session.scalar(
+                    select(ChunkRecord.status).where(
+                        ChunkRecord.toestand_url == predecessor.toestand_url,
+                        ChunkRecord.chunk_index == 0,
+                    )
+                )
+                current_status = await session.scalar(
+                    select(ChunkRecord.status)
+                    .where(
+                        ChunkRecord.toestand_url == source.current.toestand_url,
+                        ChunkRecord.artikel_status == "geldend",
+                    )
+                    .limit(1)
+                )
+                assert previous_status == "vervallen"
+                assert current_status == "geldend"
+            assert source.search_calls[-1] == _BWB_ID
+            assert source.changed == []
         finally:
             await engine.dispose()
 

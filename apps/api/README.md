@@ -14,9 +14,11 @@ uv run wetvia ingest sync
 
 The MVP preset is the seven regulation IDs in `docs/04-tech-stack.md`. An
 ingest selects the state valid today and, when present, the nearest future
-state. Sync uses `changed_since(yesterday)` only to find changed MVP laws, then
-reloads each law's complete state history so predecessor validity dates stay
-current. XML downloads remain in `nl-wetten-ingest`; SQL upserts run in
+state. Sync uses `changed_since(yesterday)` to find changed MVP laws and laws
+previously ingested with `--ids`, then reloads each changed law's complete
+state history so predecessor validity dates stay current. Every sync also
+recalculates stored chunk statuses for the current date, even when SRU reports
+no changes. XML downloads remain in `nl-wetten-ingest`; SQL upserts run in
 transactions. `embedding` remains `NULL` until the separate embedding issue.
 
 The data schema requires PostgreSQL with pgvector. SQLite migration tests cover

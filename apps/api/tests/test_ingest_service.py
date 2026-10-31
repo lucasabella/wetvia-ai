@@ -57,15 +57,33 @@ class _FakeSource:
 
 
 class _FakeSession:
-    def __init__(self, *, fail_on: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fail_on: int | None = None,
+        tracked_ids: set[str] | None = None,
+    ) -> None:
         self.statements: list[object] = []
         self.fail_on = fail_on
+        self.tracked_ids = tracked_ids or set()
         self.rolled_back = False
+
+    async def scalars(self, statement: object) -> _FakeScalarResult:
+        self.statements.append(statement)
+        return _FakeScalarResult(self.tracked_ids)
 
     async def execute(self, statement: object) -> None:
         if self.fail_on is not None and len(self.statements) + 1 == self.fail_on:
             raise RuntimeError("simulated database write failure")
         self.statements.append(statement)
+
+
+class _FakeScalarResult:
+    def __init__(self, values: set[str]) -> None:
+        self._values = values
+
+    def all(self) -> list[str]:
+        return list(self._values)
 
 
 class _SessionContext:
@@ -81,10 +99,13 @@ class _SessionContext:
 
 
 class _FakeSessionFactory:
-    def __init__(self, *, fail_on: int | None = None) -> None:
-        self.session = _FakeSession(fail_on=fail_on)
+    def __init__(self, *, fail_on: int | None = None, tracked_ids: set[str] | None = None) -> None:
+        self.session = _FakeSession(fail_on=fail_on, tracked_ids=tracked_ids)
 
     def begin(self) -> _SessionContext:
+        return _SessionContext(self.session)
+
+    def __call__(self) -> _SessionContext:
         return _SessionContext(self.session)
 
 
@@ -174,6 +195,58 @@ def test_sync_uses_yesterday_then_reloads_complete_official_history() -> None:
         if "toestand_url" in key and isinstance(value, str)
     ]
     assert set(stored_urls) == {state.toestand_url for state in history}
+
+
+def test_sync_refreshes_custom_regulations_that_were_previously_ingested() -> None:
+    custom_id = "BWBR0000001"
+    history = [replace(state, bwb_id=custom_id) for state in _bbl_history()]
+    source = _FakeSource(history)
+    source.changed = [history[-1]]
+    sessions = _FakeSessionFactory(tracked_ids={custom_id})
+    service = IngestService(
+        sessions,  # type: ignore[arg-type]
+        source,
+        parser=lambda _xml, _state: [],
+        today=lambda: _CURRENT_DATE,
+    )
+
+    report = run(service.sync())
+
+    assert report.bwb_ids == (custom_id,)
+    assert source.search_calls == [custom_id]
+    assert source.fetch_calls == [history[-1].toestand_url]
+
+
+def test_sync_reclassifies_tracked_statuses_when_changed_since_is_empty() -> None:
+    custom_id = "BWBR0000001"
+    source = _FakeSource([])
+    sessions = _FakeSessionFactory(tracked_ids={custom_id})
+    service = IngestService(
+        sessions,  # type: ignore[arg-type]
+        source,
+        parser=lambda _xml, _state: [],
+    )
+    earlier_date = date(2026, 9, 23)
+    later_date = date(2026, 9, 24)
+
+    earlier_report = run(service.sync(peildatum=earlier_date))
+    later_report = run(service.sync(peildatum=later_date))
+
+    assert earlier_report == later_report == IngestReport(bwb_ids=(), toestanden=0, chunks=0)
+    assert source.changed_since_calls == [date(2026, 9, 22), date(2026, 9, 23)]
+    assert source.search_calls == []
+    status_updates = [
+        statement
+        for statement in sessions.session.statements
+        if (
+            getattr(statement, "__visit_name__", None) == "update"
+            and getattr(getattr(statement, "table", None), "name", None) == "chunk"
+        )
+    ]
+    assert len(status_updates) == 2
+    for statement, expected_date in zip(status_updates, [earlier_date, later_date], strict=True):
+        params = statement.compile(dialect=dialect()).params
+        assert expected_date in params.values()
 
 
 def test_ingest_session_context_rolls_back_when_a_write_fails() -> None:

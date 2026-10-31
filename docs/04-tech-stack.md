@@ -108,9 +108,11 @@ cd ../web && pnpm i && pnpm dev
 `wetvia ingest bwb --preset mvp` loads the seven listed regulations. Per
 regulation it stores the state valid on the run date and, if one exists, the
 nearest future state. `wetvia ingest sync` uses `changed_since(gisteren)` to
-find changed MVP regulations, then reloads each regulation's complete state
-history before upserting metadata and the selected states' chunks. This also
-refreshes validity end dates on predecessor states. See the [API package
+find changed MVP regulations and regulations previously ingested with `--ids`,
+then reloads each changed regulation's complete state history before upserting
+metadata and the selected states' chunks. It also refreshes validity end dates
+on predecessor states and recalculates stored chunk statuses as dates advance,
+even when SRU reports no changes. See the [API package
 README](../apps/api/README.md#bwb-ingest) for command details.
 
 ### Bron-API's

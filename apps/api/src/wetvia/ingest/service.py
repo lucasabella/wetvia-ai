@@ -9,7 +9,7 @@ from datetime import date, timedelta
 from typing import Literal, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
-from sqlalchemy import case, delete, literal, or_, update
+from sqlalchemy import case, delete, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
@@ -92,20 +92,26 @@ class IngestService:
         return _combine_reports(regulation_reports)
 
     async def sync(self, *, peildatum: date | None = None) -> IngestReport:
-        """Refresh changed MVP regulations using complete SRU history snapshots."""
+        """Refresh changed MVP or tracked regulations and reclassify stored chunks."""
         effective_date = peildatum or self._today()
         changed = await asyncio.to_thread(
             self._source.changed_since,
             effective_date - timedelta(days=1),
         )
-        changed_mvp_ids = tuple(
+
+        async with self._sessions.begin() as session:
+            tracked_ids = set((await session.scalars(select(RegelingRecord.bwb_id))).all())
+            await _refresh_time_dependent_statuses(session, effective_date)
+
+        syncable_ids = set(MVP_BWB_IDS) | tracked_ids
+        changed_ids = tuple(
             bwb_id
             for bwb_id in dict.fromkeys(state.bwb_id for state in changed)
-            if bwb_id in MVP_BWB_IDS
+            if bwb_id in syncable_ids
         )
 
         reports: list[IngestReport] = []
-        for bwb_id in changed_mvp_ids:
+        for bwb_id in changed_ids:
             # The changed-since query is only a change detector. Reload full
             # history so an existing predecessor's validity end is refreshed.
             complete_history = await asyncio.to_thread(
@@ -240,6 +246,20 @@ async def _upsert_history_metadata(
         delete(ToestandRecord).where(
             ToestandRecord.bwb_id == states[0].bwb_id,
             ToestandRecord.toestand_url.not_in(history_urls),
+        )
+    )
+
+
+async def _refresh_time_dependent_statuses(session: AsyncSession, peildatum: date) -> None:
+    """Reclassify persisted chunks even when the SRU change query is empty."""
+    await session.execute(
+        update(ChunkRecord).values(
+            status=case(
+                (ChunkRecord.geldig_vanaf > peildatum, "toekomstig"),
+                (ChunkRecord.geldig_tot < peildatum, "vervallen"),
+                (ChunkRecord.artikel_status == "vervallen", "vervallen"),
+                else_="geldend",
+            )
         )
     )
 
