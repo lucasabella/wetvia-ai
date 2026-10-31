@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import json
 import os
-from collections.abc import Callable
+import time
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from wetvia_eval.ollama import (
-    NUM_CTX,
-    ChatMeasurement,
-    OllamaProvider,
-    OllamaUnreachableError,
-    model_is_listed,
-)
+import httpx
+
+from wetvia.bootstrap import get_ollama_provider
+from wetvia.llm import ChatMessage, LLMProvider, StreamMetrics
 from wetvia_eval.questions import BenchQuestion, load_questions, prompt_for
-from wetvia_eval.schema import validate_answer
-from wetvia_eval.vram import peak_mib, query_nvidia_smi_mib
+from wetvia_eval.schema import AnswerV1, validate_answer
+from wetvia_eval.vram import VramSampler, peak_mib, query_nvidia_smi_mib
 
 DEFAULT_MODELS: tuple[str, ...] = (
     "qwen3.5:9b",
@@ -27,8 +27,12 @@ DEFAULT_MODELS: tuple[str, ...] = (
     "ministral-3:8b",
 )
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
+NUM_CTX = 16384
+_VRAM_SAMPLE_INTERVAL_SECONDS = 0.1
+_ANSWER_SCHEMA = json.dumps(AnswerV1.model_json_schema(), ensure_ascii=False)
 _WARMUP_PROMPT = (
-    "Antwoord alleen met JSON volgens het schema.\nVRAAG:\nping\n\nBRONNEN:\n(geen brontekst)\n"
+    "Antwoord alleen met JSON volgens dit JSON Schema:\n"
+    f"{_ANSWER_SCHEMA}\n\nVRAAG:\nping\n\nBRONNEN:\n(geen brontekst)\n"
 )
 
 
@@ -48,6 +52,21 @@ class ModelResult:
     note: str
     items: list[ItemResult] = field(default_factory=list)
     peak_vram_mib: int | None = None
+
+
+@dataclass(frozen=True)
+class StreamMeasurement:
+    content: str
+    seconds_to_first_token: float | None
+    tokens_per_second: float | None
+
+
+class OllamaUnreachableError(RuntimeError):
+    pass
+
+
+ProviderFactory = Callable[[str, int | str | None], LLMProvider]
+ModelLister = Callable[[], set[str]]
 
 
 def mean(values: list[float]) -> float | None:
@@ -97,22 +116,26 @@ def render_report(
         f"- Endpoint: `{base_url}` `/api/chat`, streaming.",
         f"- Context vast: `num_ctx={NUM_CTX}`. `think` staat uit (docs/02 §4).",
         "- Schema: dummy `AnswerV1` uit docs/02 §4, lokaal in `wetvia_eval.schema`. "
+        "Het schema wordt in de prompt meegestuurd en na de stream lokaal gevalideerd. "
         "Het echte schema hoort later in `wetvia.answer`.",
-        "- Client: `OllamaProvider` in dit pakket. Issue #5 levert de `wetvia.llm`-port; "
-        "deze client is daar nog niet op aangesloten.",
+        "- Client: `wetvia.bootstrap.get_ollama_provider` levert de publieke "
+        "`wetvia.llm.LLMProvider`-API met de Ollama-adapter.",
         "- Zonder RAG: de prompt bevat alleen `vraag` en `brontekst` uit de JSONL.",
-        "- Tijd tot eerste token: wandklok tot het eerste niet-lege `message.content`.",
-        "- tokens/s: `eval_count / (eval_duration / 1e9)` als Ollama beide velden in het "
-        "laatste streamevent zet (`eval_duration` is nanoseconden).",
+        "- Tijd tot eerste token: wandklok tot het eerste niet-lege gestreamde contentdeel.",
+        "- tokens/s: de `StreamMetrics`-callback uit de provider meldt tokens en "
+        "generatietijd op basis van `eval_count` en `eval_duration`.",
         "- Schema-validiteit: aandeel antwoorden dat als `AnswerV1` valideert, "
         "alleen over items met een antwoord. HTTP-fouten staan apart en zitten "
         "niet in die noemer. Zonder antwoord: niet gemeten.",
-        "- Piek-VRAM: hoogste `nvidia-smi --query-gpu=memory.used` (MiB, hele GPU, "
-        "dus ook andere processen) vlak voor en na elke gemeten vraag. "
+        "- Piek-VRAM: tijdens elke generatie loopt elke 0,1 seconde een "
+        "`nvidia-smi --query-gpu=memory.used`-steekproef, met extra metingen ervoor en erna. "
+        "Dit meet de hele GPU (dus ook andere processen). "
         "Zonder `nvidia-smi`: niet beschikbaar. Op een Mac (Metal) blijft die kolom leeg.",
-        "- Eerst een warm-up-call die niet meetelt, zodat laadtijd niet in de "
-        "eerste TTFT zit. De laatste vraag per model stuurt `keep_alive: 0` "
-        "zodat Ollama het model ontladt voor het volgende.",
+        "- Eerst een warm-up-call die niet in TTFT of tokens/s meetelt, zodat laadtijd "
+        "de eerste vraag niet vervormt; VRAM wordt ook tijdens die call bemonsterd. "
+        "De laatste vraag per model stuurt `keep_alive: 0` "
+        "zodat Ollama het model ontlaadt na de generatie; de gemeten piek komt uit "
+        "de steekproeven tijdens die generatie.",
         "- Een model dat niet in `GET /api/tags` staat, wordt overgeslagen.",
         "",
         "## Vragen",
@@ -191,12 +214,47 @@ def _result_row(result: ModelResult) -> str:
     )
 
 
+def model_is_listed(available: set[str], wanted: str) -> bool:
+    if wanted in available:
+        return True
+    prefix = f"{wanted}:"
+    return any(name.startswith(prefix) for name in available)
+
+
+def _with_answer_schema(prompt: str) -> str:
+    return f"Antwoord alleen met JSON volgens dit JSON Schema:\n{_ANSWER_SCHEMA}\n\n{prompt}"
+
+
+def list_models(base_url: str) -> set[str]:
+    """Read installed tags. Chat requests themselves go through wetvia.llm."""
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(f"{base_url.rstrip('/')}/api/tags")
+            response.raise_for_status()
+            payload: object = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise OllamaUnreachableError(str(exc)) from exc
+    if not isinstance(payload, dict):
+        raise OllamaUnreachableError("Ollama /api/tags gaf geen object terug")
+    models = payload.get("models")
+    if not isinstance(models, list):
+        return set()
+    return {
+        name
+        for item in models
+        if isinstance(item, dict)
+        if isinstance(name := item.get("name"), str) and name
+    }
+
+
 def run_benchmark(
     *,
     models: list[str],
     questions: list[BenchQuestion],
-    provider: OllamaProvider,
+    provider_factory: ProviderFactory,
+    model_lister: ModelLister,
     vram_probe: Callable[[], int | None] = query_nvidia_smi_mib,
+    vram_sample_interval_seconds: float = _VRAM_SAMPLE_INTERVAL_SECONDS,
 ) -> tuple[list[ModelResult], str | None]:
     if not questions:
         return [
@@ -208,7 +266,7 @@ def run_benchmark(
             for model in models
         ], None
     try:
-        available = provider.list_models()
+        available = model_lister()
     except OllamaUnreachableError as exc:
         note = f"niet bereikbaar ({exc})"
         return [
@@ -225,33 +283,58 @@ def run_benchmark(
                 )
             )
             continue
-        results.append(_run_model(model, questions, provider, vram_probe))
+        results.append(
+            _run_model(
+                model,
+                questions,
+                provider_factory,
+                vram_probe,
+                vram_sample_interval_seconds,
+            )
+        )
     return results, None
 
 
 def _run_model(
     model: str,
     questions: list[BenchQuestion],
-    provider: OllamaProvider,
+    provider_factory: ProviderFactory,
     vram_probe: Callable[[], int | None],
+    vram_sample_interval_seconds: float,
 ) -> ModelResult:
+    readings: list[int | None] = []
+    warmup_sampler = VramSampler(
+        vram_probe,
+        interval_seconds=vram_sample_interval_seconds,
+    )
+    warmup_sampler.start()
+    warmup_error: str | None = None
     try:
-        provider.chat(model, _WARMUP_PROMPT)
-    except OllamaUnreachableError as exc:
+        _measure_stream(provider_factory(model, None), _WARMUP_PROMPT)
+    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+        warmup_error = str(exc)
+    finally:
+        warmup_sampler.stop()
+        readings.extend(warmup_sampler.readings)
+    if warmup_error is not None:
         return ModelResult(
             model=model,
             status="mislukt",
-            note=f"warm-up mislukt: {exc}",
+            note=f"warm-up mislukt: {warmup_error}",
+            peak_vram_mib=peak_mib(readings),
         )
     items: list[ItemResult] = []
-    readings: list[int | None] = []
     last_index = len(questions) - 1
     for index, question in enumerate(questions):
         keep_alive = 0 if index == last_index else None
-        readings.append(vram_probe())
+        sampler = VramSampler(vram_probe, interval_seconds=vram_sample_interval_seconds)
+        sampler.start()
         try:
-            measured = provider.chat(model, prompt_for(question), keep_alive=keep_alive)
-        except OllamaUnreachableError as exc:
+            measured = _measure_stream(
+                provider_factory(model, keep_alive),
+                _with_answer_schema(prompt_for(question)),
+            )
+        except (httpx.HTTPError, RuntimeError, ValueError) as exc:
             items.append(
                 ItemResult(
                     question_id=question.id,
@@ -261,10 +344,11 @@ def _run_model(
                     error=str(exc),
                 )
             )
-            readings.append(vram_probe())
-            continue
-        items.append(_item_from_measurement(question.id, measured))
-        readings.append(vram_probe())
+        else:
+            items.append(_item_from_measurement(question.id, measured))
+        finally:
+            sampler.stop()
+            readings.extend(sampler.readings)
     failures = sum(1 for item in items if item.error is not None)
     answered = answered_items(items)
     if not answered:
@@ -287,7 +371,46 @@ def _run_model(
     )
 
 
-def _item_from_measurement(question_id: str, measured: ChatMeasurement) -> ItemResult:
+async def _collect_stream(provider: LLMProvider, prompt: str) -> StreamMeasurement:
+    metrics: list[StreamMetrics] = []
+    started = time.perf_counter()
+    stream = await provider.chat(
+        [ChatMessage(role="user", content=prompt)],
+        schema=None,
+        stream=True,
+        temperature=0.0,
+        on_metrics=metrics.append,
+    )
+    if not isinstance(stream, AsyncIterator):
+        raise RuntimeError("LLM-provider gaf geen stream terug")
+    parts: list[str] = []
+    first_token_at: float | None = None
+    async for chunk in stream:
+        if chunk and first_token_at is None:
+            first_token_at = time.perf_counter()
+        if chunk:
+            parts.append(chunk)
+    latest = metrics[-1] if metrics else None
+    tokens_per_second: float | None = None
+    if (
+        latest is not None
+        and latest.completion_tokens is not None
+        and latest.generation_seconds is not None
+        and latest.generation_seconds > 0
+    ):
+        tokens_per_second = latest.completion_tokens / latest.generation_seconds
+    return StreamMeasurement(
+        content="".join(parts),
+        seconds_to_first_token=None if first_token_at is None else first_token_at - started,
+        tokens_per_second=tokens_per_second,
+    )
+
+
+def _measure_stream(provider: LLMProvider, prompt: str) -> StreamMeasurement:
+    return asyncio.run(_collect_stream(provider, prompt))
+
+
+def _item_from_measurement(question_id: str, measured: StreamMeasurement) -> ItemResult:
     return ItemResult(
         question_id=question_id,
         schema_valid=validate_answer(measured.content),
@@ -322,11 +445,22 @@ def main(argv: list[str] | None = None) -> int:
     models = list(args.models) if args.models else list(DEFAULT_MODELS)
     questions = load_questions(args.questions)
     when = datetime.now().astimezone()
-    provider = OllamaProvider(args.base_url)
-    try:
-        results, ollama_note = run_benchmark(models=models, questions=questions, provider=provider)
-    finally:
-        provider.close()
+
+    def provider_factory(model: str, keep_alive: int | str | None) -> LLMProvider:
+        return get_ollama_provider(
+            base_url=args.base_url,
+            model=model,
+            num_ctx=NUM_CTX,
+            keep_alive=keep_alive,
+            think=False,
+        )
+
+    results, ollama_note = run_benchmark(
+        models=models,
+        questions=questions,
+        provider_factory=provider_factory,
+        model_lister=lambda: list_models(args.base_url),
+    )
     text = render_report(
         when=when,
         base_url=args.base_url,

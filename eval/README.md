@@ -2,7 +2,7 @@
 
 Benchmark- en eval-harness (`wetvia-eval`, AGPL-3.0-only). De vragen in `data/` zijn CC BY 4.0. Die set is nog leeg: geen bron, geen claim.
 
-`eval/bench_models.py` meet lokale Ollama-modellen (issue #6): tijd tot het eerste token, tokens/s, schema-validiteit op een dummy-`AnswerV1`, en piek-VRAM via `nvidia-smi` als dat er is. De client `OllamaProvider` staat in dit pakket. Issue #5 bouwt de `wetvia.llm`-port; deze benchmark hangt daar nog niet aan.
+`eval/bench_models.py` meet lokale Ollama-modellen (issue #6): tijd tot het eerste token, tokens/s, schema-validiteit op een dummy-`AnswerV1`, en piek-VRAM via `nvidia-smi` als dat er is. Chat loopt via de publieke `wetvia.llm`-port, aangemaakt door `wetvia.bootstrap.get_ollama_provider`. Alleen het ophalen van geïnstalleerde tags gebruikt `GET /api/tags` rechtstreeks; de benchmark heeft geen eigen Ollama-chatclient.
 
 Er is nog geen `run.py`. Dat is de latere eval-runner, niet deze bake-off.
 
@@ -28,11 +28,11 @@ uv run python eval/bench_models.py
 
 Andere tags: `uv run python eval/bench_models.py qwen3.5:9b`. Het rapport komt in `eval/reports/bench-<datum>.md`. Een sjabloon zonder cijfers staat in `eval/reports/bench-template.md`.
 
-Context staat vast op `num_ctx=16384` en `think` staat uit. Per model gaat er eerst een warm-up-call uit die niet meetelt. De laatste vraag stuurt `keep_alive: 0` zodat Ollama het model ontladt. Schema-validiteit telt alleen antwoorden; HTTP-fouten staan apart. Valt alles weg, dan is de status `mislukt`.
+Context staat vast op `num_ctx=16384` en `think` staat uit. Per model gaat er eerst een warm-up-call uit die niet meetelt voor TTFT of tokens/s; VRAM wordt ook tijdens die generatie bemonsterd. De laatste vraag stuurt `keep_alive: 0` zodat Ollama het model ontlaadt na de generatie. `nvidia-smi` wordt tijdens elke generatie iedere 0,1 seconde bevraagd, plus vlak ervoor en erna. Zo blijft de gemeten piek staan, ook als het model na de laatste generatie wordt ontladen. Elke modelrun houdt zijn eigen steekproeven bij. Schema-validiteit telt alleen antwoorden; HTTP-fouten staan apart. Valt alles weg, dan is de status `mislukt`.
 
 ### RTX 3070 (8 GB)
 
-Ollama native, niet de Docker-GPU-service. `nvidia-smi` levert de VRAM-kolom (MiB in gebruik op de hele GPU, steekproef voor en na elke vraag). Docs/02 zet het 9B-model krap in 8 GB bij deze context; past een model niet, dan faalt of skipt Ollama en blijft de rij zonder verzonnen snelheid.
+Ollama native, niet de Docker-GPU-service. `nvidia-smi` levert de VRAM-kolom (MiB in gebruik op de hele GPU, inclusief andere processen). Docs/02 zet het 9B-model krap in 8 GB bij deze context; past een model niet, dan faalt of skipt Ollama en blijft de rij zonder verzonnen snelheid.
 
 ### MacBook Air M3 (16 GB)
 

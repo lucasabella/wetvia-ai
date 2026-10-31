@@ -24,7 +24,7 @@ def package_version() -> str:
 def get_provider(settings: Settings) -> LLMProvider:
     """Build the configured adapter. This is the only place that reads LLM settings."""
     if settings.llm_provider == "ollama":
-        return OllamaProvider(base_url=settings.llm_base_url, model=settings.llm_model)
+        return get_ollama_provider(base_url=settings.llm_base_url, model=settings.llm_model)
     if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value().strip():
         raise RuntimeError("LLM_API_KEY is required when LLM_PROVIDER is openai_compat")
     api_key = settings.llm_api_key.get_secret_value()
@@ -32,6 +32,24 @@ def get_provider(settings: Settings) -> LLMProvider:
         base_url=settings.llm_base_url,
         model=settings.llm_model,
         api_key=api_key,
+    )
+
+
+def get_ollama_provider(
+    *,
+    base_url: str,
+    model: str,
+    num_ctx: int | None = None,
+    keep_alive: int | str | None = None,
+    think: bool | None = None,
+) -> LLMProvider:
+    """Build an explicitly configured local provider for tools such as eval."""
+    return OllamaProvider(
+        base_url=base_url,
+        model=model,
+        num_ctx=num_ctx,
+        keep_alive=keep_alive,
+        think=think,
     )
 
 

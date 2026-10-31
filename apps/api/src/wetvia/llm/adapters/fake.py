@@ -1,9 +1,9 @@
 """In-memory provider for tests. No network."""
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 
 from wetvia.llm.parsing import parse_with_one_retry
-from wetvia.llm.ports import ChatMessage, ModelT
+from wetvia.llm.ports import ChatMessage, ModelT, StreamMetrics
 
 
 class FakeProvider:
@@ -20,6 +20,8 @@ class FakeProvider:
         schema: type[ModelT] | None,
         stream: bool,
         temperature: float,
+        *,
+        on_metrics: Callable[[StreamMetrics], None] | None = None,
     ) -> ModelT | str | AsyncIterator[str]:
         self.calls.append((messages, schema, stream, temperature))
         if schema is not None:

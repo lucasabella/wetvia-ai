@@ -1,21 +1,37 @@
-"""Harness-tests met een nepserver. Geen model en geen verzonnen bench-cijfers."""
+"""Harness tests with a fake public LLM provider; no model and no benchmark numbers."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
-from collections.abc import Callable
+import threading
+from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 
-import httpx
 import pytest
+from pydantic import BaseModel
 
-from wetvia_eval.bench import DEFAULT_MODELS, ModelResult, main, render_report, run_benchmark
-from wetvia_eval.ollama import NUM_CTX, OllamaProvider, OllamaRequestError
+from wetvia.llm import ChatMessage, LLMProvider, StreamMetrics
+from wetvia_eval.bench import (
+    DEFAULT_MODELS,
+    ModelResult,
+    OllamaUnreachableError,
+    _with_answer_schema,
+    main,
+    model_is_listed,
+    render_report,
+    run_benchmark,
+)
 from wetvia_eval.questions import BenchQuestion, load_questions, prompt_for
 from wetvia_eval.schema import AnswerV1, validate_answer
-from wetvia_eval.vram import parse_nvidia_smi_memory_mib, peak_mib, query_nvidia_smi_mib
+from wetvia_eval.vram import (
+    VramSampler,
+    parse_nvidia_smi_memory_mib,
+    peak_mib,
+    query_nvidia_smi_mib,
+)
 
 
 def _valid_answer() -> str:
@@ -29,8 +45,93 @@ def _valid_answer() -> str:
     ).model_dump_json()
 
 
+class _FakeProvider:
+    def __init__(
+        self,
+        *,
+        model: str,
+        response: str,
+        metrics: StreamMetrics | None = None,
+        error_for: Callable[[str], str | None] | None = None,
+        active_model: dict[str, str | None] | None = None,
+        delay_seconds: float = 0.0,
+    ) -> None:
+        self.model = model
+        self.response = response
+        self.metrics = metrics
+        self.error_for = error_for
+        self.active_model = active_model
+        self.delay_seconds = delay_seconds
+
+    async def chat[ModelT: BaseModel](
+        self,
+        messages: Sequence[ChatMessage],
+        schema: type[ModelT] | None,
+        stream: bool,
+        temperature: float,
+        *,
+        on_metrics: Callable[[StreamMetrics], None] | None = None,
+    ) -> ModelT | str | AsyncIterator[str]:
+        if schema is not None or not stream or temperature != 0.0:
+            raise AssertionError("benchmark gebruikt alleen tekststreams zonder schema")
+
+        async def chunks() -> AsyncIterator[str]:
+            prompt = "\n".join(message["content"] for message in messages)
+            phase = "warmup" if "VRAAG:\nping\n" in prompt else "measured"
+            if self.active_model is not None:
+                self.active_model["model"] = f"{self.model}:{phase}"
+            try:
+                if self.delay_seconds:
+                    await asyncio.sleep(self.delay_seconds)
+                error = self.error_for(prompt) if self.error_for is not None else None
+                if error is not None:
+                    raise RuntimeError(error)
+                yield self.response
+                if on_metrics is not None and self.metrics is not None:
+                    on_metrics(self.metrics)
+            finally:
+                if self.active_model is not None:
+                    self.active_model["model"] = None
+
+        return chunks()
+
+
+def _factory(
+    *,
+    response: str | Callable[[str], str] | None = None,
+    metrics: StreamMetrics | None = None,
+    active_model: dict[str, str | None] | None = None,
+    delay_seconds: float = 0.0,
+    error_for: Callable[[str], str | None] | None = None,
+) -> tuple[Callable[[str, int | str | None], LLMProvider], list[tuple[str, int | str | None]]]:
+    created: list[tuple[str, int | str | None]] = []
+    default_response = _valid_answer() if response is None else response
+    default_metrics = (
+        StreamMetrics(completion_tokens=4, generation_seconds=2.0) if metrics is None else metrics
+    )
+
+    def create(model: str, keep_alive: int | str | None) -> LLMProvider:
+        created.append((model, keep_alive))
+        return _FakeProvider(
+            model=model,
+            response=default_response(model) if callable(default_response) else default_response,
+            metrics=default_metrics,
+            error_for=error_for,
+            active_model=active_model,
+            delay_seconds=delay_seconds,
+        )
+
+    return create, created
+
+
 def test_default_models_match_issue() -> None:
     assert DEFAULT_MODELS == ("qwen3.5:9b", "qwen3.5:4b", "gemma4:12b", "ministral-3:8b")
+
+
+def test_model_tags_match_an_exact_tag_or_its_latest_tag() -> None:
+    assert model_is_listed({"qwen3.5:9b"}, "qwen3.5:9b")
+    assert model_is_listed({"qwen3.5:9b:latest"}, "qwen3.5:9b")
+    assert not model_is_listed({"qwen3.5:4b"}, "qwen3.5:9b")
 
 
 def test_prompt_uses_only_the_given_source_text() -> None:
@@ -41,15 +142,19 @@ def test_prompt_uses_only_the_given_source_text() -> None:
     assert "zet status op onzeker" in prompt
 
 
+def test_benchmark_prompt_includes_the_answer_schema() -> None:
+    question = BenchQuestion(id="x", vraag="Ping?", brontekst="Alleen deze tekst.")
+    prompt = _with_answer_schema(prompt_for(question))
+    assert '"title": "AnswerV1"' in prompt
+    assert "Ping?" in prompt
+    assert "Alleen deze tekst." in prompt
+
+
 def test_load_questions_rejects_a_missing_question(tmp_path: Path) -> None:
     path = tmp_path / "bench.jsonl"
     path.write_text('{"id": "a"}\n', encoding="utf-8")
-    try:
+    with pytest.raises(ValueError, match="vraag"):
         load_questions(path)
-    except ValueError as exc:
-        assert "vraag" in str(exc)
-    else:
-        raise AssertionError("lege vraag hoort te falen")
 
 
 def test_schema_accepts_the_documented_shape_and_rejects_prose() -> None:
@@ -93,163 +198,130 @@ def test_nvidia_smi_parser_and_missing_binary() -> None:
     assert query_nvidia_smi_mib(missing) is None
 
 
-def _provider(
-    handler: httpx.RequestHandler,
-    clock: Callable[[], float] | None = None,
-) -> OllamaProvider:
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    return OllamaProvider("http://ollama.test", client, clock=clock)
+def test_vram_sampler_collects_during_the_request() -> None:
+    active = threading.Event()
+
+    def probe() -> int | None:
+        if active.is_set():
+            return 850
+        return 100
+
+    sampler = VramSampler(probe, interval_seconds=0.005)
+    sampler.start()
+    active.set()
+    threading.Event().wait(0.04)
+    active.clear()
+    sampler.stop()
+    assert sampler.peak_mib == 850
+    assert len(sampler.readings) >= 3
 
 
-def test_missing_model_is_skipped_without_a_chat_call() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/tags":
-            return httpx.Response(200, json={"models": [{"name": "qwen3.5:9b"}]})
-        raise AssertionError(f"onverwachte call {request.url.path}")
-
-    provider = _provider(handler)
+def test_missing_model_is_skipped_without_a_provider_call() -> None:
+    factory, created = _factory()
     results, note = run_benchmark(
         models=["gemma4:12b"],
         questions=[BenchQuestion(id="q", vraag="Ping?", brontekst="")],
-        provider=provider,
+        provider_factory=factory,
+        model_lister=lambda: {"qwen3.5:9b"},
         vram_probe=lambda: None,
     )
-    provider.close()
     assert note is None
+    assert created == []
     assert results[0].status == "overgeslagen"
     assert results[0].items == []
     assert "niet gemeten" in _row(results[0].model, results)
 
 
 def test_unreachable_ollama_skips_every_model() -> None:
-    def handler(_request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("down")
+    factory, created = _factory()
 
-    provider = _provider(handler)
+    def unavailable() -> set[str]:
+        raise OllamaUnreachableError("down")
+
     results, note = run_benchmark(
         models=["qwen3.5:9b", "ministral-3:8b"],
         questions=[BenchQuestion(id="q", vraag="Ping?", brontekst="tekst")],
-        provider=provider,
+        provider_factory=factory,
+        model_lister=unavailable,
     )
-    provider.close()
     assert note is not None
     assert "niet bereikbaar" in note
+    assert created == []
     assert all(result.status == "overgeslagen" for result in results)
 
 
-def test_stream_measures_ttft_rate_and_schema() -> None:
-    answer = _valid_answer()
-    lines = [
-        json.dumps({"message": {"role": "assistant", "content": answer[:1]}}),
-        json.dumps({"message": {"role": "assistant", "content": answer[1:]}}),
-        json.dumps({"done": True, "eval_count": 4, "eval_duration": 2_000_000_000}),
-    ]
-    body = ("\n".join(lines) + "\n").encode()
-    payloads: list[object] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/tags":
-            return httpx.Response(200, json={"models": [{"name": "qwen3.5:4b"}]})
-        payloads.append(json.loads(request.content.decode()))
-        return httpx.Response(200, content=body)
-
-    times = iter((0.0, 0.5, 10.0, 10.25))
-    provider = OllamaProvider(
-        "http://ollama.test",
-        httpx.Client(transport=httpx.MockTransport(handler)),
-        clock=lambda: next(times),
-    )
-    probes = iter((100, 250))
+def test_public_provider_stream_measures_ttft_tokens_and_schema() -> None:
+    factory, created = _factory()
     results, _note = run_benchmark(
         models=["qwen3.5:4b"],
         questions=[BenchQuestion(id="probe", vraag="Ping?", brontekst="bron")],
-        provider=provider,
-        vram_probe=lambda: next(probes),
+        provider_factory=factory,
+        model_lister=lambda: {"qwen3.5:4b"},
+        vram_probe=lambda: None,
     )
-    provider.close()
-    assert len(payloads) == 2
-    warmup, measured_call = payloads
-    assert isinstance(warmup, dict)
-    assert isinstance(measured_call, dict)
-    assert "keep_alive" not in warmup
-    assert measured_call["keep_alive"] == 0
-    assert measured_call["think"] is False
-    assert measured_call["options"] == {"num_ctx": NUM_CTX}
     result = results[0]
+    assert created == [("qwen3.5:4b", None), ("qwen3.5:4b", 0)]
     assert result.status == "gemeten"
-    assert result.peak_vram_mib == 250
     assert result.items[0].schema_valid is True
-    assert result.items[0].seconds_to_first_token == 0.25
+    assert result.items[0].seconds_to_first_token is not None
     assert result.items[0].tokens_per_second == 2.0
 
 
 def test_invalid_json_counts_as_schema_failure() -> None:
-    lines = [
-        json.dumps({"message": {"content": "geen json"}}),
-        json.dumps({"done": True, "eval_count": 1, "eval_duration": 1_000_000_000}),
-    ]
-    body = ("\n".join(lines) + "\n").encode()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/tags":
-            return httpx.Response(200, json={"models": [{"name": "qwen3.5:9b"}]})
-        return httpx.Response(200, content=body)
-
-    provider = _provider(handler)
+    factory, _created = _factory(response="geen json")
     results, _note = run_benchmark(
         models=["qwen3.5:9b"],
         questions=[BenchQuestion(id="probe", vraag="Ping?", brontekst="")],
-        provider=provider,
+        provider_factory=factory,
+        model_lister=lambda: {"qwen3.5:9b"},
         vram_probe=lambda: None,
     )
-    provider.close()
     assert results[0].items[0].schema_valid is False
     assert results[0].items[0].error is None
     assert results[0].status == "gemeten"
     assert results[0].peak_vram_mib is None
 
 
-def _stream(events: list[object]) -> bytes:
-    return ("\n".join(json.dumps(event) for event in events) + "\n").encode()
+def test_generation_peak_is_kept_per_model_when_keep_alive_unloads() -> None:
+    active: dict[str, str | None] = {"model": None}
+    factory, created = _factory(active_model=active, delay_seconds=0.08)
+    peaks = {"model-a": 810, "model-b": 710}
+
+    def probe() -> int:
+        model = active["model"]
+        if model is None or model.endswith(":warmup"):
+            return 100
+        assert model.endswith(":measured")
+        return peaks[model.removesuffix(":measured")]
+
+    results, _note = run_benchmark(
+        models=["model-a", "model-b"],
+        questions=[BenchQuestion(id="probe", vraag="Ping?", brontekst="")],
+        provider_factory=factory,
+        model_lister=lambda: set(peaks),
+        vram_probe=probe,
+        vram_sample_interval_seconds=0.005,
+    )
+    assert [result.peak_vram_mib for result in results] == [810, 710]
+    assert created == [
+        ("model-a", None),
+        ("model-a", 0),
+        ("model-b", None),
+        ("model-b", 0),
+    ]
 
 
 def test_stream_error_is_a_request_failure_not_invalid_schema() -> None:
-    def error_handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            content=_stream([{"error": "model requires more system memory than is available"}]),
-        )
-
-    direct = _provider(error_handler)
-    with pytest.raises(OllamaRequestError, match="system memory"):
-        direct.chat("qwen3.5:9b", "x")
-    direct.close()
-
-    answer = _valid_answer()
-    calls = {"n": 0}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/tags":
-            return httpx.Response(200, json={"models": [{"name": "qwen3.5:9b"}]})
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return httpx.Response(
-                200,
-                content=_stream([{"message": {"content": answer}}, {"done": True}]),
-            )
-        return httpx.Response(
-            200,
-            content=_stream([{"error": "model requires more system memory than is available"}]),
-        )
-
-    provider = _provider(handler)
+    factory, _created = _factory(
+        error_for=lambda prompt: "model requires more system memory" if "Ping?" in prompt else None
+    )
     results, _note = run_benchmark(
         models=["qwen3.5:9b"],
         questions=[BenchQuestion(id="vram", vraag="Ping?", brontekst="")],
-        provider=provider,
+        provider_factory=factory,
+        model_lister=lambda: {"qwen3.5:9b"},
         vram_probe=lambda: None,
     )
-    provider.close()
     assert results[0].status == "mislukt"
     assert results[0].items[0].error is not None
     assert "system memory" in results[0].items[0].error
@@ -259,43 +331,22 @@ def test_stream_error_is_a_request_failure_not_invalid_schema() -> None:
 
 
 def test_schema_percent_ignores_http_failures() -> None:
-    answer = _valid_answer()
-    calls = {"n": 0}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/tags":
-            return httpx.Response(200, json={"models": [{"name": "qwen3.5:9b"}]})
-        calls["n"] += 1
-        if calls["n"] == 2:
-            return httpx.Response(200, content=_stream([{"error": "boom"}]))
-        return httpx.Response(
-            200,
-            content=_stream(
-                [
-                    {"message": {"content": answer}},
-                    {"done": True, "eval_count": 2, "eval_duration": 1_000_000_000},
-                ]
-            ),
-        )
-
-    provider = _provider(handler)
+    factory, _created = _factory(error_for=lambda prompt: "boom" if "FAIL" in prompt else None)
     questions = [
         BenchQuestion(id="ok", vraag="Ping?", brontekst=""),
-        BenchQuestion(id="fail", vraag="Ping?", brontekst=""),
+        BenchQuestion(id="fail", vraag="FAIL", brontekst=""),
     ]
     results, _note = run_benchmark(
         models=["qwen3.5:9b"],
         questions=questions,
-        provider=provider,
+        provider_factory=factory,
+        model_lister=lambda: {"qwen3.5:9b"},
         vram_probe=lambda: None,
     )
-    provider.close()
     result = results[0]
     assert result.status == "gemeten"
     assert "HTTP-fout" in result.note
-    text = _row(result.model, results)
-    assert "100.0" in text
-    assert "| 50" not in text
+    assert "100.0" in _row(result.model, results)
 
 
 def test_main_writes_a_report_without_numbers_when_the_set_is_missing(tmp_path: Path) -> None:

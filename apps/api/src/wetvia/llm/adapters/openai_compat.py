@@ -5,14 +5,14 @@ server rejects the schema (HTTP 400 or 422). Auth and rate-limit errors propagat
 """
 
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Any, cast, get_args, get_origin
 
 from openai import APIStatusError, AsyncOpenAI
 from pydantic import AliasChoices, AliasPath, BaseModel
 
 from wetvia.llm.parsing import parse_with_one_retry
-from wetvia.llm.ports import ChatMessage, ModelT
+from wetvia.llm.ports import ChatMessage, ModelT, StreamMetrics
 
 _SCHEMA_UNSUPPORTED = frozenset({400, 422})
 _MISSING = object()
@@ -187,6 +187,8 @@ class OpenAICompatProvider:
         schema: type[ModelT] | None,
         stream: bool,
         temperature: float,
+        *,
+        on_metrics: Callable[[StreamMetrics], None] | None = None,
     ) -> ModelT | str | AsyncIterator[str]:
         if schema is not None:
             if stream:
