@@ -9,12 +9,13 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Any, cast, get_args, get_origin
 
 from openai import APIStatusError, AsyncOpenAI
-from pydantic import BaseModel
+from pydantic import AliasChoices, AliasPath, BaseModel
 
 from wetvia.llm.parsing import parse_with_one_retry
 from wetvia.llm.ports import ChatMessage, ModelT
 
 _SCHEMA_UNSUPPORTED = frozenset({400, 422})
+_MISSING = object()
 
 
 def _strict_schema_compatible(schema: object) -> bool:
@@ -85,15 +86,60 @@ def _drop_defaulted_nulls(value: object, model: type[BaseModel]) -> object:
     if not isinstance(value, dict):
         return value
     for name, field in model.model_fields.items():
-        if name not in value:
-            continue
-        item = value[name]
-        annotation = field.annotation
-        if item is None and not field.is_required() and not _allows_none(annotation):
-            del value[name]
-            continue
-        value[name] = _drop_nested_defaulted_nulls(item, annotation)
+        for path in _validation_paths(name, field):
+            target = _path_target(value, path)
+            if target is None:
+                continue
+            container, key = target
+            item = container[key]
+            annotation = field.annotation
+            if item is None and not field.is_required() and not _allows_none(annotation):
+                del container[key]
+                continue
+            container[key] = _drop_nested_defaulted_nulls(item, annotation)
     return value
+
+
+def _validation_paths(name: str, field: Any) -> list[tuple[str | int, ...]]:
+    alias = field.validation_alias
+    if isinstance(alias, str):
+        aliases: list[str | AliasPath] = [alias]
+    elif isinstance(alias, AliasPath):
+        aliases = [alias]
+    elif isinstance(alias, AliasChoices):
+        aliases = alias.choices
+    else:
+        aliases = [name]
+
+    paths = [tuple([alias] if isinstance(alias, str) else alias.path) for alias in aliases]
+    if (name,) not in paths:
+        paths.append((name,))
+    return paths
+
+
+def _path_target(
+    value: dict[str, Any], path: tuple[str | int, ...]
+) -> tuple[dict[str, Any], str] | None:
+    if not path or not isinstance(path[-1], str):
+        return None
+    container: Any = value
+    for part in path[:-1]:
+        child = _path_child(container, part)
+        if child is _MISSING:
+            return None
+        container = child
+    key = path[-1]
+    if isinstance(container, dict) and key in container:
+        return container, key
+    return None
+
+
+def _path_child(container: Any, part: str | int) -> Any:
+    if isinstance(container, dict) and isinstance(part, str) and part in container:
+        return container[part]
+    if isinstance(container, list) and isinstance(part, int) and 0 <= part < len(container):
+        return container[part]
+    return _MISSING
 
 
 def _drop_nested_defaulted_nulls(value: object, annotation: object) -> object:
@@ -165,7 +211,11 @@ class OpenAICompatProvider:
                 schema,
                 messages,
                 complete,
-                parse_json=lambda raw: _parse_openai_json(schema, raw),
+                parse_json=lambda raw: (
+                    schema.model_validate_json(raw)
+                    if json_object_only
+                    else _parse_openai_json(schema, raw)
+                ),
             )
         if stream:
             return self._stream(messages, temperature)

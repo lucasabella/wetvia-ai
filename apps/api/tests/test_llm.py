@@ -10,7 +10,7 @@ import httpx
 import pytest
 import respx
 from openai import APIStatusError
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from wetvia.bootstrap import get_provider
 from wetvia.config import Settings
@@ -33,6 +33,13 @@ class DictionaryProbe(BaseModel):
 
 class DefaultedProbe(BaseModel):
     label: str = "use the model default"
+
+
+class AliasedDefaultedProbe(BaseModel):
+    alias_label: str = Field(default="alias default", alias="label")
+    validation_alias_label: str = Field(
+        default="validation alias default", validation_alias="incoming_label"
+    )
 
 
 class NestedDefaultedProbe(BaseModel):
@@ -372,6 +379,62 @@ def test_openai_defaulted_null_uses_model_default() -> None:
         return result
 
     assert asyncio.run(run()).label == "use the model default"
+
+
+def test_openai_defaulted_null_uses_validation_aliases() -> None:
+    async def run() -> AliasedDefaultedProbe:
+        with respx.mock:
+            route = respx.post("http://llm.test/v1/chat/completions").mock(
+                return_value=httpx.Response(
+                    200,
+                    json=_openai_body('{"label":null,"incoming_label":null}'),
+                )
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            result = await provider.chat(_messages(), AliasedDefaultedProbe, False, 0.0)
+        body = json.loads(route.calls[0].request.content)
+        properties = body["response_format"]["json_schema"]["schema"]["properties"]
+        assert {"type": "null"} in properties["label"]["anyOf"]
+        assert {"type": "null"} in properties["incoming_label"]["anyOf"]
+        assert isinstance(result, AliasedDefaultedProbe)
+        return result
+
+    result = asyncio.run(run())
+    assert result.alias_label == "alias default"
+    assert result.validation_alias_label == "validation alias default"
+
+
+def test_openai_json_object_fallback_does_not_normalize_defaulted_null() -> None:
+    async def run() -> DefaultedProbe:
+        with respx.mock:
+            route = respx.post("http://llm.test/v1/chat/completions").mock(
+                side_effect=[
+                    httpx.Response(
+                        400,
+                        json={
+                            "error": {
+                                "message": "unsupported",
+                                "type": "invalid_request_error",
+                            }
+                        },
+                    ),
+                    httpx.Response(200, json=_openai_body('{"label":null}')),
+                    httpx.Response(200, json=_openai_body('{"label":"retry value"}')),
+                ]
+            )
+            provider = OpenAICompatProvider("http://llm.test/v1", "dummy-model", "test-key")
+            result = await provider.chat(_messages(), DefaultedProbe, False, 0.0)
+        assert route.call_count == 3
+        formats = [
+            json.loads(call.request.content)["response_format"]["type"] for call in route.calls
+        ]
+        assert formats == ["json_schema", "json_object", "json_object"]
+        retry = json.loads(route.calls[2].request.content)
+        assert any("Validation failed" in message["content"] for message in retry["messages"])
+        assert isinstance(result, DefaultedProbe)
+        return result
+
+    assert asyncio.run(run()).label == "retry value"
 
 
 def test_openai_defaulted_null_uses_nested_model_default() -> None:
