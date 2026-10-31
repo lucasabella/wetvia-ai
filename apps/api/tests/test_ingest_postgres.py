@@ -48,7 +48,7 @@ class _OfficialFixtureSource:
         return list(self.changed)
 
     def fetch_toestand_xml(self, toestand: Toestand) -> bytes:
-        assert toestand.toestand_url == self.current.toestand_url
+        assert toestand.bwb_id == _BWB_ID
         self.fetch_calls.append(toestand.toestand_url)
         return self.xml
 
@@ -234,6 +234,15 @@ def test_postgres_migration_and_ingest_upserts_real_official_fixture(
             def smaller_chunks(xml_bytes: bytes, toestand: Toestand) -> list[Chunk]:
                 return parse_bwb_xml(xml_bytes, toestand, max_chars=700)
 
+            changed_current = replace(
+                source.current,
+                modified=source.current.modified + timedelta(days=1),
+            )
+            source.history = [
+                changed_current if state.toestand_url == source.current.toestand_url else state
+                for state in history
+            ]
+            source.changed = [changed_current]
             changed_service = IngestService(sessions, source, parser=smaller_chunks)
             sync_report = await changed_service.sync(peildatum=_PEILDATUM)
             assert sync_report.bwb_ids == (_BWB_ID,)
@@ -317,7 +326,9 @@ def test_postgres_migration_and_ingest_upserts_real_official_fixture(
             status_sync = await IngestService(sessions, source).sync(
                 peildatum=source.current.geldig_vanaf
             )
-            assert status_sync.bwb_ids == ()
+            assert status_sync.bwb_ids == (_BWB_ID,)
+            assert status_sync.toestanden == 1
+            assert status_sync.chunks == 0
             assert len(source.search_calls) == searches_before_status_sync
             assert len(source.fetch_calls) == fetches_before_status_sync
             async with sessions() as session:
@@ -339,6 +350,94 @@ def test_postgres_migration_and_ingest_upserts_real_official_fixture(
                 assert current_status == "geldend"
             assert source.search_calls[-1] == _BWB_ID
             assert source.changed == []
+
+            # Start with official history where one future state follows the
+            # current state. At its start date, sync must materialize the next
+            # future state from stored metadata without re-fetching unchanged XML.
+            initial_date = date(2026, 2, 1)
+            initial_current = next(
+                state for state in history if classify(state, initial_date) == "geldend"
+            )
+            initial_future = min(
+                (state for state in history if classify(state, initial_date) == "toekomstig"),
+                key=lambda state: state.geldig_vanaf,
+            )
+            transition_date = initial_future.geldig_vanaf
+            next_future = min(
+                (state for state in history if classify(state, transition_date) == "toekomstig"),
+                key=lambda state: state.geldig_vanaf,
+            )
+
+            def synthetic_chunk(_xml_bytes: bytes, state: Toestand) -> list[Chunk]:
+                return [
+                    Chunk(
+                        bwb_id=state.bwb_id,
+                        regeling_titel="Synthetic status transition fixture",
+                        artikel="sync-test",
+                        lid=None,
+                        onderdeel=None,
+                        opschrift=None,
+                        kop_pad="Synthetic test data",
+                        tekst="Synthetic transition regression row; not legal text.",
+                        geldig_vanaf=state.geldig_vanaf,
+                        geldig_tot=state.geldig_tot,
+                        bron_url=state.toestand_url,
+                        toestand_url=state.toestand_url,
+                        status="geldend",
+                    )
+                ]
+
+            transition_service = IngestService(sessions, source, parser=synthetic_chunk)
+            initial_transition_report = await transition_service.ingest_bwb(
+                ids=[_BWB_ID],
+                peildatum=initial_date,
+            )
+            assert initial_transition_report.toestanden == 2
+            assert source.fetch_calls[-2:] == [
+                initial_current.toestand_url,
+                initial_future.toestand_url,
+            ]
+
+            source.changed = []
+            searches_before_transition_sync = len(source.search_calls)
+            fetches_before_transition_sync = len(source.fetch_calls)
+            transition_report = await transition_service.sync(peildatum=transition_date)
+            assert transition_report.bwb_ids == (_BWB_ID,)
+            assert transition_report.toestanden == 2
+            assert transition_report.chunks == 1
+            assert len(source.search_calls) == searches_before_transition_sync
+            assert source.fetch_calls[fetches_before_transition_sync:] == [next_future.toestand_url]
+
+            async with sessions() as session:
+                for state in (initial_current, initial_future, next_future):
+                    row = await session.scalar(
+                        select(ChunkRecord).where(
+                            ChunkRecord.toestand_url == state.toestand_url,
+                            ChunkRecord.chunk_index == 0,
+                        )
+                    )
+                    assert row is not None
+                previous_row = await session.scalar(
+                    select(ChunkRecord).where(
+                        ChunkRecord.toestand_url == initial_current.toestand_url,
+                        ChunkRecord.chunk_index == 0,
+                    )
+                )
+                current_row = await session.scalar(
+                    select(ChunkRecord).where(
+                        ChunkRecord.toestand_url == initial_future.toestand_url,
+                        ChunkRecord.chunk_index == 0,
+                    )
+                )
+                next_row = await session.scalar(
+                    select(ChunkRecord).where(
+                        ChunkRecord.toestand_url == next_future.toestand_url,
+                        ChunkRecord.chunk_index == 0,
+                    )
+                )
+                assert previous_row is not None and previous_row.status == "vervallen"
+                assert current_row is not None and current_row.status == "geldend"
+                assert next_row is not None and next_row.status == "toekomstig"
         finally:
             await engine.dispose()
 

@@ -111,7 +111,9 @@ nearest future state. `wetvia ingest sync` uses `changed_since(gisteren)` to
 find changed MVP regulations and regulations previously ingested with `--ids`,
 then reloads each changed regulation's complete state history before upserting
 metadata and the selected states' chunks. It also refreshes validity end dates
-on predecessor states and recalculates stored chunk statuses as dates advance,
+on predecessor states. For unchanged tracked regulations it reuses the stored
+full history and chunks, fetching only a selected current or future state that
+is not materialized yet. It recalculates stored chunk statuses as dates advance,
 even when SRU reports no changes. See the [API package
 README](../apps/api/README.md#bwb-ingest) for command details.
 

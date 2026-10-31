@@ -6,14 +6,14 @@ import re
 from asyncio import run
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 from sqlalchemy.dialects.postgresql import dialect
 
-from nl_wetten_ingest import BwbSRUClient, Toestand, parse_bwb_xml
+from nl_wetten_ingest import BwbSRUClient, Toestand, classify, parse_bwb_xml
 from wetvia.ingest import MVP_BWB_IDS, IngestReport, IngestService
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -72,10 +72,14 @@ class _FakeSession:
         self.statements.append(statement)
         return _FakeScalarResult(self.tracked_ids)
 
-    async def execute(self, statement: object) -> None:
+    async def execute(self, statement: object) -> object:
+        if getattr(statement, "__visit_name__", None) == "select":
+            self.statements.append(statement)
+            return _FakeRows()
         if self.fail_on is not None and len(self.statements) + 1 == self.fail_on:
             raise RuntimeError("simulated database write failure")
         self.statements.append(statement)
+        return None
 
 
 class _FakeScalarResult:
@@ -84,6 +88,11 @@ class _FakeScalarResult:
 
     def all(self) -> list[str]:
         return list(self._values)
+
+
+class _FakeRows:
+    def all(self) -> list[tuple[object, ...]]:
+        return []
 
 
 class _SessionContext:
@@ -217,36 +226,46 @@ def test_sync_refreshes_custom_regulations_that_were_previously_ingested() -> No
     assert source.fetch_calls == [history[-1].toestand_url]
 
 
-def test_sync_reclassifies_tracked_statuses_when_changed_since_is_empty() -> None:
+def test_sync_with_no_source_changes_reselects_current_and_nearest_future() -> None:
     custom_id = "BWBR0000001"
-    source = _FakeSource([])
+    history = [replace(state, bwb_id=custom_id) for state in _bbl_history()]
+    source = _FakeSource(history)
     sessions = _FakeSessionFactory(tracked_ids={custom_id})
     service = IngestService(
         sessions,  # type: ignore[arg-type]
         source,
         parser=lambda _xml, _state: [],
     )
-    earlier_date = date(2026, 9, 23)
-    later_date = date(2026, 9, 24)
+    initial_date = date(2026, 2, 1)
+    initial_future = min(
+        (state for state in history if classify(state, initial_date) == "toekomstig"),
+        key=lambda state: state.geldig_vanaf,
+    )
+    transition_date = initial_future.geldig_vanaf
+    next_future = min(
+        (state for state in history if classify(state, transition_date) == "toekomstig"),
+        key=lambda state: state.geldig_vanaf,
+    )
 
-    earlier_report = run(service.sync(peildatum=earlier_date))
-    later_report = run(service.sync(peildatum=later_date))
-
-    assert earlier_report == later_report == IngestReport(bwb_ids=(), toestanden=0, chunks=0)
-    assert source.changed_since_calls == [date(2026, 9, 22), date(2026, 9, 23)]
-    assert source.search_calls == []
-    status_updates = [
-        statement
-        for statement in sessions.session.statements
-        if (
-            getattr(statement, "__visit_name__", None) == "update"
-            and getattr(getattr(statement, "table", None), "name", None) == "chunk"
-        )
+    initial_report = run(service.ingest_bwb(ids=[custom_id], peildatum=initial_date))
+    assert initial_report.bwb_ids == (custom_id,)
+    assert [
+        state.toestand_url for state in history if state.toestand_url in source.fetch_calls
+    ] == [
+        next(state.toestand_url for state in history if classify(state, initial_date) == "geldend"),
+        initial_future.toestand_url,
     ]
-    assert len(status_updates) == 2
-    for statement, expected_date in zip(status_updates, [earlier_date, later_date], strict=True):
-        params = statement.compile(dialect=dialect()).params
-        assert expected_date in params.values()
+    source.search_calls.clear()
+    source.fetch_calls.clear()
+    source.changed_since_calls.clear()
+    source.changed = []
+
+    report = run(service.sync(peildatum=transition_date))
+
+    assert source.changed_since_calls == [transition_date - timedelta(days=1)]
+    assert source.search_calls == [custom_id]
+    assert source.fetch_calls == [initial_future.toestand_url, next_future.toestand_url]
+    assert report == IngestReport(bwb_ids=(custom_id,), toestanden=2, chunks=0)
 
 
 def test_ingest_session_context_rolls_back_when_a_write_fails() -> None:

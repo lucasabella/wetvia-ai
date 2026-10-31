@@ -50,6 +50,12 @@ class IngestReport:
     chunks: int
 
 
+@dataclass(frozen=True, slots=True)
+class _StoredState:
+    modified: date
+    has_chunks: bool
+
+
 class IngestService:
     """Select official BWB states, parse them, and transactionally upsert them."""
 
@@ -98,33 +104,93 @@ class IngestService:
             self._source.changed_since,
             effective_date - timedelta(days=1),
         )
+        tracked_ids, stored_history, existing_states = await self._load_tracked_history()
 
-        async with self._sessions.begin() as session:
-            tracked_ids = set((await session.scalars(select(RegelingRecord.bwb_id))).all())
-            await _refresh_time_dependent_statuses(session, effective_date)
-
-        syncable_ids = set(MVP_BWB_IDS) | tracked_ids
+        syncable_ids = set(MVP_BWB_IDS) | set(tracked_ids)
         changed_ids = tuple(
             bwb_id
             for bwb_id in dict.fromkeys(state.bwb_id for state in changed)
             if bwb_id in syncable_ids
         )
+        refresh_ids = tuple(dict.fromkeys((*tracked_ids, *changed_ids)))
 
         reports: list[IngestReport] = []
-        for bwb_id in changed_ids:
-            # The changed-since query is only a change detector. Reload full
-            # history so an existing predecessor's validity end is refreshed.
-            complete_history = await asyncio.to_thread(
-                self._source.search_toestanden,
-                bwb_id,
+        for bwb_id in refresh_ids:
+            # SRU changes require a complete source snapshot. Otherwise the
+            # previously stored history is enough to reclassify states and
+            # materialize a newly selected current/future document if missing.
+            if bwb_id in changed_ids or not stored_history.get(bwb_id):
+                history = await asyncio.to_thread(self._source.search_toestanden, bwb_id)
+            else:
+                history = stored_history[bwb_id]
+            reports.append(
+                await self._ingest_history(
+                    history,
+                    effective_date,
+                    existing_states=existing_states.get(bwb_id),
+                )
             )
-            reports.append(await self._ingest_history(complete_history, effective_date))
         return _combine_reports(reports)
+
+    async def _load_tracked_history(
+        self,
+    ) -> tuple[
+        tuple[str, ...],
+        dict[str, list[Toestand]],
+        dict[str, dict[str, _StoredState]],
+    ]:
+        async with self._sessions() as session:
+            tracked_ids = tuple(
+                sorted(set((await session.scalars(select(RegelingRecord.bwb_id))).all()))
+            )
+            if not tracked_ids:
+                return (), {}, {}
+
+            state_rows = (
+                await session.execute(
+                    select(ToestandRecord, RegelingRecord.titel)
+                    .join(RegelingRecord, RegelingRecord.bwb_id == ToestandRecord.bwb_id)
+                    .where(ToestandRecord.bwb_id.in_(tracked_ids))
+                )
+            ).all()
+            chunk_urls = set(
+                (
+                    await session.scalars(
+                        select(ChunkRecord.toestand_url)
+                        .where(ChunkRecord.bwb_id.in_(tracked_ids))
+                        .distinct()
+                    )
+                ).all()
+            )
+
+        histories: dict[str, list[Toestand]] = {bwb_id: [] for bwb_id in tracked_ids}
+        existing_states: dict[str, dict[str, _StoredState]] = {bwb_id: {} for bwb_id in tracked_ids}
+        for record, titel in state_rows:
+            state = Toestand(
+                bwb_id=record.bwb_id,
+                titel=titel,
+                geldig_vanaf=record.geldig_vanaf,
+                geldig_tot=record.geldig_tot,
+                toestand_url=record.toestand_url,
+                modified=record.modified,
+            )
+            histories[record.bwb_id].append(state)
+            existing_states[record.bwb_id][record.toestand_url] = _StoredState(
+                modified=record.modified,
+                has_chunks=record.toestand_url in chunk_urls,
+            )
+        return (
+            tracked_ids,
+            {bwb_id: _unique_history(history) for bwb_id, history in histories.items()},
+            existing_states,
+        )
 
     async def _ingest_history(
         self,
         history: Sequence[Toestand],
         peildatum: date,
+        *,
+        existing_states: dict[str, _StoredState] | None = None,
     ) -> IngestReport:
         states = _unique_history(history)
         if not states:
@@ -137,6 +203,9 @@ class IngestService:
         selected = _select_current_and_next(states, peildatum)
         parsed: dict[str, tuple[Toestand, list[Chunk]]] = {}
         for state in selected:
+            previous = (existing_states or {}).get(state.toestand_url)
+            if previous is not None and previous.has_chunks and previous.modified == state.modified:
+                continue
             xml_bytes = await asyncio.to_thread(self._source.fetch_toestand_xml, state)
             chunks = await asyncio.to_thread(self._parser, xml_bytes, state)
             parsed[state.toestand_url] = (state, chunks)
@@ -246,20 +315,6 @@ async def _upsert_history_metadata(
         delete(ToestandRecord).where(
             ToestandRecord.bwb_id == states[0].bwb_id,
             ToestandRecord.toestand_url.not_in(history_urls),
-        )
-    )
-
-
-async def _refresh_time_dependent_statuses(session: AsyncSession, peildatum: date) -> None:
-    """Reclassify persisted chunks even when the SRU change query is empty."""
-    await session.execute(
-        update(ChunkRecord).values(
-            status=case(
-                (ChunkRecord.geldig_vanaf > peildatum, "toekomstig"),
-                (ChunkRecord.geldig_tot < peildatum, "vervallen"),
-                (ChunkRecord.artikel_status == "vervallen", "vervallen"),
-                else_="geldend",
-            )
         )
     )
 
