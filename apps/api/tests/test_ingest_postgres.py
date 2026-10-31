@@ -438,6 +438,83 @@ def test_postgres_migration_and_ingest_upserts_real_official_fixture(
                 assert previous_row is not None and previous_row.status == "vervallen"
                 assert current_row is not None and current_row.status == "geldend"
                 assert next_row is not None and next_row.status == "toekomstig"
+
+            # A source correction can change XML without changing its
+            # calendar-date modified value. Explicitly reported changed URLs
+            # must still be fetched, while embeddings remain content-sensitive.
+            async with sessions() as session:
+                same_day_chunk = await session.scalar(
+                    select(ChunkRecord).where(
+                        ChunkRecord.toestand_url == source.current.toestand_url,
+                        ChunkRecord.chunk_index == 0,
+                    )
+                )
+                stored_state = await session.get(ToestandRecord, source.current.toestand_url)
+                assert same_day_chunk is not None
+                assert stored_state is not None
+                same_day_chunk_id = same_day_chunk.id
+                old_chunk_text = same_day_chunk.tekst
+                stored_modified = stored_state.modified
+
+            async with sessions.begin() as session:
+                await session.execute(
+                    update(ChunkRecord)
+                    .where(
+                        ChunkRecord.toestand_url == source.current.toestand_url,
+                        ChunkRecord.chunk_index == 0,
+                    )
+                    .values(embedding=[0.25] * 1024)
+                )
+
+            corrected_state = replace(source.current, modified=stored_modified)
+            assert corrected_state.modified == stored_modified
+            source.history = [
+                corrected_state if state.toestand_url == corrected_state.toestand_url else state
+                for state in history
+            ]
+            source.changed = [corrected_state]
+            corrected_xml = b"Synthetic same-day correction; not legal text."
+            source.xml = corrected_xml
+
+            def corrected_chunk(xml_bytes: bytes, state: Toestand) -> list[Chunk]:
+                return [
+                    Chunk(
+                        bwb_id=state.bwb_id,
+                        regeling_titel="Synthetic same-day correction test",
+                        artikel="same-day-test",
+                        lid=None,
+                        onderdeel=None,
+                        opschrift=None,
+                        kop_pad="Synthetic correction test",
+                        tekst=xml_bytes.decode("ascii"),
+                        geldig_vanaf=state.geldig_vanaf,
+                        geldig_tot=state.geldig_tot,
+                        bron_url=state.toestand_url,
+                        toestand_url=state.toestand_url,
+                        status="geldend",
+                    )
+                ]
+
+            fetches_before_correction = len(source.fetch_calls)
+            correction_report = await IngestService(sessions, source, parser=corrected_chunk).sync(
+                peildatum=_PEILDATUM
+            )
+            assert correction_report.bwb_ids == (_BWB_ID,)
+            assert correction_report.chunks == 1
+            assert source.fetch_calls[fetches_before_correction:] == [corrected_state.toestand_url]
+
+            async with sessions() as session:
+                corrected_chunk_row = await session.scalar(
+                    select(ChunkRecord).where(
+                        ChunkRecord.toestand_url == corrected_state.toestand_url,
+                        ChunkRecord.chunk_index == 0,
+                    )
+                )
+                assert corrected_chunk_row is not None
+                assert corrected_chunk_row.id == same_day_chunk_id
+                assert corrected_chunk_row.tekst == corrected_xml.decode("ascii")
+                assert corrected_chunk_row.tekst != old_chunk_text
+                assert corrected_chunk_row.embedding is None
         finally:
             await engine.dispose()
 

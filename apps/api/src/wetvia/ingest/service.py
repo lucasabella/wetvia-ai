@@ -107,11 +107,11 @@ class IngestService:
         tracked_ids, stored_history, existing_states = await self._load_tracked_history()
 
         syncable_ids = set(MVP_BWB_IDS) | set(tracked_ids)
-        changed_ids = tuple(
-            bwb_id
-            for bwb_id in dict.fromkeys(state.bwb_id for state in changed)
-            if bwb_id in syncable_ids
-        )
+        changed_urls_by_id: dict[str, set[str]] = {}
+        for state in changed:
+            if state.bwb_id in syncable_ids:
+                changed_urls_by_id.setdefault(state.bwb_id, set()).add(state.toestand_url)
+        changed_ids = tuple(changed_urls_by_id)
         refresh_ids = tuple(dict.fromkeys((*tracked_ids, *changed_ids)))
 
         reports: list[IngestReport] = []
@@ -128,6 +128,7 @@ class IngestService:
                     history,
                     effective_date,
                     existing_states=existing_states.get(bwb_id),
+                    force_refresh_urls=changed_urls_by_id.get(bwb_id, set()),
                 )
             )
         return _combine_reports(reports)
@@ -191,6 +192,7 @@ class IngestService:
         peildatum: date,
         *,
         existing_states: dict[str, _StoredState] | None = None,
+        force_refresh_urls: set[str] | frozenset[str] = frozenset(),
     ) -> IngestReport:
         states = _unique_history(history)
         if not states:
@@ -204,7 +206,12 @@ class IngestService:
         parsed: dict[str, tuple[Toestand, list[Chunk]]] = {}
         for state in selected:
             previous = (existing_states or {}).get(state.toestand_url)
-            if previous is not None and previous.has_chunks and previous.modified == state.modified:
+            if (
+                state.toestand_url not in force_refresh_urls
+                and previous is not None
+                and previous.has_chunks
+                and previous.modified == state.modified
+            ):
                 continue
             xml_bytes = await asyncio.to_thread(self._source.fetch_toestand_xml, state)
             chunks = await asyncio.to_thread(self._parser, xml_bytes, state)
