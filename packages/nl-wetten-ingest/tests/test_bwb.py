@@ -14,6 +14,7 @@ from nl_wetten_ingest import (
     SRUDiagnosticError,
     SRUProtocolError,
     Toestand,
+    ToestandDownloadError,
     changed_since,
     classify,
     search_toestanden,
@@ -72,6 +73,114 @@ def test_search_toestanden_parses_bbl_metadata_and_follows_pages() -> None:
         ),
         modified=date(2026, 5, 12),
     )
+
+
+def test_fetch_toestand_xml_uses_official_url_and_user_agent() -> None:
+    official_url = (
+        "https://repository.officiele-overheidspublicaties.nl/bwb/BWBR0041297/"
+        "2026-09-24_0/xml/BWBR0041297_2026-09-24_0.xml"
+    )
+    toestand = Toestand(
+        bwb_id="BWBR0041297",
+        titel="Besluit bouwwerken leefomgeving",
+        geldig_vanaf=date(2026, 9, 24),
+        geldig_tot=date(9999, 12, 31),
+        toestand_url=official_url,
+        modified=date(2026, 9, 30),
+    )
+    response_body = b"<official-bwb-xml/>"
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, content=response_body, request=request)
+
+    with BwbSRUClient(transport=httpx.MockTransport(respond)) as client:
+        assert client.fetch_toestand_xml(toestand) == response_body
+
+    assert len(requests) == 1
+    assert str(requests[0].url) == official_url
+    assert requests[0].headers["accept"] == "application/xml"
+    assert requests[0].headers["user-agent"] == USER_AGENT
+
+
+def test_fetch_toestand_xml_retries_temporary_errors_and_rejects_untrusted_urls() -> None:
+    official_url = (
+        "https://repository.officiele-overheidspublicaties.nl/bwb/BWBR0041297/"
+        "2026-09-24_0/xml/BWBR0041297_2026-09-24_0.xml"
+    )
+    toestand = Toestand(
+        bwb_id="BWBR0041297",
+        titel="Besluit bouwwerken leefomgeving",
+        geldig_vanaf=date(2026, 9, 24),
+        geldig_tot=date(9999, 12, 31),
+        toestand_url=official_url,
+        modified=date(2026, 9, 30),
+    )
+    requests: list[httpx.Request] = []
+    delays: list[float] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(503, request=request)
+        return httpx.Response(200, content=b"<official-bwb-xml/>", request=request)
+
+    with BwbSRUClient(
+        transport=httpx.MockTransport(respond),
+        max_attempts=2,
+        backoff_seconds=0.1,
+        sleep=delays.append,
+    ) as client:
+        assert client.fetch_toestand_xml(toestand) == b"<official-bwb-xml/>"
+        with pytest.raises(ValueError, match="official BWB XML URL"):
+            client.fetch_toestand_xml(
+                Toestand(
+                    bwb_id=toestand.bwb_id,
+                    titel=toestand.titel,
+                    geldig_vanaf=toestand.geldig_vanaf,
+                    geldig_tot=toestand.geldig_tot,
+                    toestand_url="https://example.invalid/BWBR0041297.xml",
+                    modified=toestand.modified,
+                )
+            )
+
+    assert len(requests) == 2
+    assert delays == [0.1]
+
+
+def test_fetch_toestand_xml_surfaces_exhausted_transport_retries() -> None:
+    toestand = Toestand(
+        bwb_id="BWBR0041297",
+        titel="Besluit bouwwerken leefomgeving",
+        geldig_vanaf=date(2026, 9, 24),
+        geldig_tot=date(9999, 12, 31),
+        toestand_url=(
+            "https://repository.officiele-overheidspublicaties.nl/bwb/BWBR0041297/"
+            "2026-09-24_0/xml/BWBR0041297_2026-09-24_0.xml"
+        ),
+        modified=date(2026, 9, 30),
+    )
+    requests: list[httpx.Request] = []
+    delays: list[float] = []
+
+    def fail(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        raise httpx.ConnectError("connection unavailable", request=request)
+
+    with (
+        BwbSRUClient(
+            transport=httpx.MockTransport(fail),
+            max_attempts=2,
+            backoff_seconds=0.1,
+            sleep=delays.append,
+        ) as client,
+        pytest.raises(ToestandDownloadError, match="failed after retries"),
+    ):
+        client.fetch_toestand_xml(toestand)
+
+    assert len(requests) == 2
+    assert delays == [0.1]
 
 
 def test_search_toestanden_parses_all_awb_fixture_pages() -> None:

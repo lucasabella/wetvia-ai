@@ -16,6 +16,7 @@ import httpx
 
 SRU_URL = "https://zoekservice.overheid.nl/sru/Search"
 SRU_CONNECTION = "BWB"
+_BWB_REPOSITORY_HOST = "repository.officiele-overheidspublicaties.nl"
 _SRU_NAMESPACE = "http://docs.oasis-open.org/ns/search-ws/sruResponse"
 _SRU_DIAGNOSTIC_NAMESPACE = "http://docs.oasis-open.org/ns/search-ws/diagnostic"
 _GZD_NAMESPACE = "http://standaarden.overheid.nl/sru"
@@ -41,6 +42,10 @@ class SRUError(RuntimeError):
 
 class SRUProtocolError(SRUError):
     """The SRU endpoint returned an invalid or incomplete response."""
+
+
+class ToestandDownloadError(RuntimeError):
+    """An official BWB Toestand XML document could not be downloaded."""
 
 
 class SRUDiagnosticError(SRUError):
@@ -155,6 +160,46 @@ class BwbSRUClient:
         """Fetch all BWB versions whose official ``dcterms:modified`` is recent."""
         since = _parse_input_date(datum)
         return self._search(f"dcterms.modified>={since.isoformat()}")
+
+    def fetch_toestand_xml(self, toestand: Toestand) -> bytes:
+        """Download an official XML document for one validated BWB ``Toestand``."""
+        url = httpx.URL(toestand.toestand_url)
+        expected_path = f"/bwb/{toestand.bwb_id}/"
+        if (
+            not _BWB_ID_PATTERN.fullmatch(toestand.bwb_id)
+            or url.scheme != "https"
+            or url.host != _BWB_REPOSITORY_HOST
+            or url.port not in (None, 443)
+            or bool(url.username)
+            or bool(url.password)
+            or not url.path.startswith(expected_path)
+            or not url.path.endswith(".xml")
+        ):
+            raise ValueError("Toestand URL is not an official BWB XML URL")
+
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                response = self._http.get(toestand.toestand_url)
+            except httpx.TransportError as exc:
+                if attempt == self._max_attempts:
+                    raise ToestandDownloadError(
+                        "BWB Toestand XML download failed after retries"
+                    ) from exc
+                self._sleep(self._backoff_seconds * (2.0 ** (attempt - 1)))
+                continue
+
+            if response.status_code in {408, 429} or response.status_code >= 500:
+                if attempt == self._max_attempts:
+                    response.raise_for_status()
+                self._sleep(self._retry_delay(response, attempt))
+                continue
+
+            response.raise_for_status()
+            if not response.content:
+                raise ToestandDownloadError("BWB Toestand XML download returned an empty body")
+            return response.content
+
+        raise AssertionError("unreachable retry loop")
 
     def _search(self, query: str, *, expected_bwb_id: str | None = None) -> list[Toestand]:
         results: list[Toestand] = []

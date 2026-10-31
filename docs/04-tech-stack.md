@@ -105,6 +105,18 @@ cd ../web && pnpm i && pnpm dev
 | Algemene wet bestuursrecht (Awb) | BWBR0005537 |
 | Burgerlijk Wetboek Boek 5 (o.a. art. 5:50 vensters/burenrecht) | BWBR0005288 |
 
+`wetvia ingest bwb --preset mvp` loads the seven listed regulations. Per
+regulation it stores the state valid on the run date and, if one exists, the
+nearest future state. `wetvia ingest sync` uses `changed_since(gisteren)` to
+find changed MVP regulations and regulations previously ingested with `--ids`,
+then reloads each changed regulation's complete state history before upserting
+metadata and the selected states' chunks. It also refreshes validity end dates
+on predecessor states. For unchanged tracked regulations it reuses the stored
+full history and chunks, fetching only a selected current or future state that
+is not materialized yet. It recalculates stored chunk statuses as dates advance,
+even when SRU reports no changes. See the [API package
+README](../apps/api/README.md#bwb-ingest) for command details.
+
 ### Bron-API's
 
 | Bron | Endpoint | Licentie | Auth |

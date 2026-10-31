@@ -19,14 +19,14 @@ geldende = select_toestand(toestanden, date(2026, 10, 31))
 print(geldende.titel, classify(geldende, date(2026, 10, 31)))
 ```
 
-Parseer de XML die bij de gekozen `Toestand` hoort en geef die metadata mee voor de herkomst van iedere chunk:
+`fetch_toestand_xml` haalt de XML van de gevalideerde officiële Toestand-URL op. Parseer die bytes met dezelfde metadata voor de herkomst van iedere chunk:
 
 ```python
-from pathlib import Path
+from nl_wetten_ingest import BwbSRUClient, parse_bwb_xml
 
-from nl_wetten_ingest import parse_bwb_xml
-
-chunks = parse_bwb_xml(Path("BWBR0041297_2026-09-24_0.xml").read_bytes(), geldende)
+with BwbSRUClient() as client:
+    xml = client.fetch_toestand_xml(geldende)
+chunks = parse_bwb_xml(xml, geldende)
 for chunk in chunks:
     print(chunk.artikel, chunk.lid, chunk.onderdeel, chunk.tekst, chunk.bron_url)
 ```
