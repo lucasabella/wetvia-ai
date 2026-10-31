@@ -60,8 +60,9 @@ provenance used for its citation.
 Both candidate rankings apply inclusive validity dates in SQL and exclude
 repealed articles. `include_future=true` also searches states whose start date
 is after the requested date; returned legal status is calculated against that
-requested date. An exact article reference is added as a candidate and boosted
-only when the complete article label matches.
+requested date. An exact article reference receives a small `0.01` score nudge
+only when its exact label already appears in the top-30 FTS or vector candidates;
+it does not add same-numbered articles from unrelated regulations.
 
 The data schema requires PostgreSQL with pgvector. SQLite migration tests cover
 Alembic URL selection only; CI runs retrieval, migration, ingest, and embedding

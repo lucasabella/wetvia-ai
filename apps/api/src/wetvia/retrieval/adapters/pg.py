@@ -22,7 +22,7 @@ from wetvia.retrieval.ports import (
     SourceDocument,
     SourceMetadata,
 )
-from wetvia.retrieval.rrf import RRF_K
+from wetvia.retrieval.rrf import ARTICLE_MATCH_BOOST, RRF_K
 
 _VECTOR_TYPE = re.compile(r"vector\((\d+)\)")
 _EMBEDDING_SPACE_SQL = text(
@@ -75,20 +75,10 @@ _SEARCH_SQL = text(
                row_number() OVER (ORDER BY distance ASC, id ASC) AS position
         FROM vector_candidates
     ),
-    article_candidates AS (
-        SELECT chunk.id
-        FROM chunk
-        WHERE chunk.artikel_status <> 'vervallen'
-          AND (:include_future OR chunk.geldig_vanaf <= :peildatum)
-          AND (chunk.geldig_tot IS NULL OR chunk.geldig_tot >= :peildatum)
-          AND lower(btrim(chunk.artikel)) = ANY(CAST(:article_refs AS text[]))
-    ),
     candidate_ids AS (
         SELECT id FROM fts_ranked
         UNION
         SELECT id FROM vector_ranked
-        UNION
-        SELECT id FROM article_candidates
     ),
     fused_scores AS (
         SELECT ranked.id,
@@ -211,7 +201,7 @@ class PgHybridRetriever:
                         "peildatum": peildatum,
                         "include_future": include_future,
                         "article_refs": article_refs,
-                        "article_boost": 1.0,
+                        "article_boost": ARTICLE_MATCH_BOOST,
                         "rrf_k": RRF_K,
                         "limit": k,
                     },

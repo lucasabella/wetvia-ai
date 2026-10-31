@@ -109,7 +109,7 @@ flowchart TD
 2. pgvector (cosine, HNSW-index), met query-invoer `Instruct: {task}\nQuery: {query}` → top 30.
 3. Eén parameterized PostgreSQL-CTE-query rangschikt beide stromen en combineert ze met **Reciprocal Rank Fusion** (k = 60) → standaard top 8. Gelijke scores krijgen een stabiele UUID-volgorde.
 4. Beide kandidaatstromen filteren in SQL vóór het rangschikken op inclusieve peildatumgrenzen en sluiten vervallen artikelen uit. `include_future=true` laat ook chunks toe waarvan `geldig_vanaf` na de peildatum valt; hun geretourneerde status wordt op die peildatum berekend.
-5. Een exact artikelnummer zoals `2.29` krijgt een boost en wordt als kandidaat meegenomen. Vergelijking gebruikt het volledige artikellabel, zodat `2.29` geen match is op `12.29` of `2.290`.
+5. Een exact artikelnummer zoals `2.29` krijgt een kleine boost (`0,01`) wanneer het chunk al in de top 30 van FTS of vector search staat. De boost is kleiner dan de laagste afzonderlijke RRF-bijdrage uit die top-30 streams, en voegt geen gelijkgenummerde artikelen uit andere regelingen toe. Vergelijking gebruikt het volledige artikellabel, zodat `2.29` geen match is op `12.29` of `2.290`.
 6. Fase 2: een reranker (kandidaten: `Qwen3-Reranker-0.6B`, `bge-reranker-v2-m3`), alleen invoeren als hij recall@5 op de eval-set meetbaar verbetert.
 
 ### 3.3 Regels-als-code (geleerd van Sneltoetser)

@@ -24,7 +24,7 @@ from wetvia.db.schema import ChunkRecord, EmbeddingConfigRecord, RegelingRecord,
 from wetvia.embeddings import format_document_input
 from wetvia.retrieval.adapters.pg import PgHybridRetriever
 from wetvia.retrieval.hybrid import QUERY_INSTRUCTION
-from wetvia.retrieval.rrf import reciprocal_rank_score
+from wetvia.retrieval.rrf import ARTICLE_MATCH_BOOST, reciprocal_rank_score
 
 _API_ROOT = Path(__file__).resolve().parents[1]
 _REPO_ROOT = _API_ROOT.parents[1]
@@ -64,6 +64,8 @@ def _vector_for(text: str) -> list[float]:
         return _basis_vector(2)
     if query and source.strip() == "2.29":
         return _basis_vector(0)
+    if query and source.strip() == "Synthetic regulation Alpha 2.29 alphaonlyneedle":
+        return _basis_vector(3)
     if query and {"hoog", "dakkapel", "vergunningvrij"} <= terms:
         return _basis_vector(1)
     if (
@@ -164,9 +166,11 @@ def _synthetic_record(
     article_status: str = "geldend",
     status: str = "geldend",
     embedding: list[float] | None = None,
+    bwb_id: str = _SYNTHETIC_BWB_ID,
+    regulation_title: str = "Synthetic retrieval test (not legal text)",
 ) -> ChunkRecord:
     document_input = format_document_input(
-        "Synthetic retrieval test (not legal text)",
+        regulation_title,
         "Synthetic fixture metadata",
         article,
         None,
@@ -177,8 +181,8 @@ def _synthetic_record(
         id=chunk_id,
         toestand_url=state_url,
         chunk_index=0,
-        bwb_id=_SYNTHETIC_BWB_ID,
-        regeling_titel="Synthetic retrieval test (not legal text)",
+        bwb_id=bwb_id,
+        regeling_titel=regulation_title,
         artikel=article,
         lid=None,
         onderdeel=None,
@@ -221,6 +225,10 @@ def test_pg_hybrid_search_uses_official_bbl_fixture_and_date_filters(
     fts_only_url = "https://example.test/toestand/fts-only"
     collision_1229_url = "https://example.test/toestand/collision-12-29"
     collision_2290_url = "https://example.test/toestand/collision-2-290"
+    alpha_url = "https://example.test/toestand/synthetic-alpha"
+    beta_url = "https://example.test/toestand/synthetic-beta"
+    alpha_bwb_id = "TEST-ALPHA"
+    beta_bwb_id = "TEST-BETA"
     future_id = uuid5(NAMESPACE_URL, f"{future_url}#future-test")
     boundary_id = uuid5(NAMESPACE_URL, f"{boundary_url}#boundary-test")
     expired_id = uuid5(NAMESPACE_URL, f"{expired_url}#expired-test")
@@ -229,6 +237,8 @@ def test_pg_hybrid_search_uses_official_bbl_fixture_and_date_filters(
     fts_only_id = uuid5(NAMESPACE_URL, f"{fts_only_url}#fts-only")
     collision_1229_id = uuid5(NAMESPACE_URL, f"{collision_1229_url}#12.29")
     collision_2290_id = uuid5(NAMESPACE_URL, f"{collision_2290_url}#2.290")
+    alpha_id = uuid5(NAMESPACE_URL, f"{alpha_url}#2.29")
+    beta_id = uuid5(NAMESPACE_URL, f"{beta_url}#2.29")
     synthetic_text = "Synthetic dakkapel hoogte vergunningvrij marker; not legal text."
     fts_only_record = _synthetic_record(
         article="fts-only",
@@ -251,6 +261,18 @@ def test_pg_hybrid_search_uses_official_bbl_fixture_and_date_filters(
                         bwb_id=_SYNTHETIC_BWB_ID,
                         titel="Synthetic retrieval test (not a legal regulation)",
                     )
+                )
+                session.add_all(
+                    [
+                        RegelingRecord(
+                            bwb_id=alpha_bwb_id,
+                            titel="Synthetic regulation Alpha (not legal text)",
+                        ),
+                        RegelingRecord(
+                            bwb_id=beta_bwb_id,
+                            titel="Synthetic regulation Beta (not legal text)",
+                        ),
+                    ]
                 )
                 session.add(
                     ToestandRecord(
@@ -281,6 +303,24 @@ def test_pg_hybrid_search_uses_official_bbl_fixture_and_date_filters(
                             modified=valid_from,
                         )
                         for state_url, valid_from, valid_until in synthetic_states
+                    ]
+                )
+                session.add_all(
+                    [
+                        ToestandRecord(
+                            toestand_url=alpha_url,
+                            bwb_id=alpha_bwb_id,
+                            geldig_vanaf=date(2020, 1, 1),
+                            geldig_tot=None,
+                            modified=date(2020, 1, 1),
+                        ),
+                        ToestandRecord(
+                            toestand_url=beta_url,
+                            bwb_id=beta_bwb_id,
+                            geldig_vanaf=date(2020, 1, 1),
+                            geldig_tot=None,
+                            modified=date(2020, 1, 1),
+                        ),
                     ]
                 )
                 await session.flush()
@@ -348,6 +388,26 @@ def test_pg_hybrid_search_uses_official_bbl_fixture_and_date_filters(
                             valid_until=None,
                             embedding=_basis_vector(0),
                         ),
+                        _synthetic_record(
+                            article="2.29",
+                            text="alphaonlyneedle; synthetic Alpha record, not legal text.",
+                            state_url=alpha_url,
+                            valid_from=date(2020, 1, 1),
+                            valid_until=None,
+                            embedding=_basis_vector(3),
+                            bwb_id=alpha_bwb_id,
+                            regulation_title="Synthetic regulation Alpha (not legal text)",
+                        ),
+                        _synthetic_record(
+                            article="2.29",
+                            text="unrelatedbeta; synthetic Beta record, not legal text.",
+                            state_url=beta_url,
+                            valid_from=date(2020, 1, 1),
+                            valid_until=None,
+                            embedding=[-value for value in _basis_vector(3)],
+                            bwb_id=beta_bwb_id,
+                            regulation_title="Synthetic regulation Beta (not legal text)",
+                        ),
                     ]
                 )
 
@@ -381,14 +441,30 @@ def test_pg_hybrid_search_uses_official_bbl_fixture_and_date_filters(
 
             article_reference_results = await retriever.search("2.29", _PEILDATUM, k=60)
             assert article_reference_results
-            assert article_reference_results[0].source.metadata.artikel == "2.29"
-            assert article_reference_results[0].score >= 1.0
             article_results_by_id = {
                 result.source.chunk_id: result for result in article_reference_results
             }
+            assert any(
+                result.source.metadata.bwb_id == _BWB_ID
+                and result.source.metadata.artikel == "2.29"
+                for result in article_reference_results
+            )
             assert {collision_1229_id, collision_2290_id} <= set(article_results_by_id)
-            assert article_results_by_id[collision_1229_id].score < 1.0
-            assert article_results_by_id[collision_2290_id].score < 1.0
+            largest_unboosted_rrf = 2 * reciprocal_rank_score(1)
+            assert article_results_by_id[collision_1229_id].score <= largest_unboosted_rrf
+            assert article_results_by_id[collision_2290_id].score <= largest_unboosted_rrf
+
+            qualified_query = "Synthetic regulation Alpha 2.29 alphaonlyneedle"
+            qualified_results = await retriever.search(qualified_query, _PEILDATUM, k=60)
+            qualified_ids = {result.source.chunk_id for result in qualified_results}
+            assert alpha_id in qualified_ids
+            assert beta_id not in qualified_ids
+            alpha_result = next(
+                result for result in qualified_results if result.source.chunk_id == alpha_id
+            )
+            assert alpha_result.score == pytest.approx(
+                2 * reciprocal_rank_score(1) + ARTICLE_MATCH_BOOST
+            )
 
             rrf_results = await retriever.search("rrfcheck", _PEILDATUM, k=60)
             rrf_result = next(result for result in rrf_results if result.source.chunk_id == rrf_id)

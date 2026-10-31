@@ -1,6 +1,9 @@
 """Reciprocal-rank-fusion constants and pure scoring helper."""
 
 RRF_K = 60
+# A tie-breaking nudge smaller than the weakest contribution in either top-30
+# stream. The SQL applies it only to exact-label chunks already retrieved.
+ARTICLE_MATCH_BOOST = 0.01
 
 
 def reciprocal_rank_score(rank: int, *, k: int = RRF_K) -> float:
