@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<diagnostics xmlns="http://docs.oasis-open.org/ns/search-ws/sruResponse"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:schemaLocation="http://docs.oasis-open.org/ns/search-ws/sruResponse http://docs.oasis-open.org/search-ws/searchRetrieve/v1.0/os/schemas/sruResponse.xsd">
+   <diagnostic xmlns="http://docs.oasis-open.org/ns/search-ws/diagnostic"
+               xsi:schemaLocation="http://docs.oasis-open.org/ns/search-ws/diagnostic http://docs.oasis-open.org/search-ws/searchRetrieve/v1.0/os/schemas/diagnostic.xsd">
+      <uri>info:srw/diagnostic/1/16</uri>
+      <details>wetvia.invalidField</details>
+      <message>Unsupported index</message>
+   </diagnostic>
+</diagnostics>
