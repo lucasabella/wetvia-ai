@@ -138,6 +138,41 @@ describe("createWetviaClient", () => {
     }
   });
 
+  it("cancels the response body when the consumer stops early", async () => {
+    let bodyCancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            'event: sources\ndata: {"type":"sources","sources":[]}\n\n',
+          ),
+        );
+      },
+      cancel() {
+        bodyCancelled = true;
+      },
+    });
+    const client = createWetviaClient({
+      baseUrl: "https://wetvia.example.test",
+      fetch: async () =>
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+    });
+    const events = streamChatEvents(client, {
+      messages: [{ role: "user", content: "Synthetic question?" }],
+      peildatum: "2026-10-31",
+    });
+
+    expect(await events.next()).toMatchObject({
+      done: false,
+      value: { type: "sources", sources: [] },
+    });
+    await events.return(undefined);
+
+    expect(bodyCancelled).toBe(true);
+  });
+
   it("rejects an incomplete stream that ends before its done event", async () => {
     const sources = 'event: sources\ndata: {"type":"sources","sources":[]}\n\n';
     const answer = `event: answer\ndata: ${JSON.stringify({
