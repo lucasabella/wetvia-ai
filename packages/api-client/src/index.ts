@@ -44,6 +44,7 @@ export async function* parseChatEventStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let reachedEnd = false;
+  let sawDone = false;
   try {
     while (true) {
       const { value, done } = await reader.read();
@@ -61,6 +62,10 @@ export async function* parseChatEventStream(
         buffer = frame.rest;
         const event = parseSseFrame(frame.content);
         if (event !== undefined) {
+          if (sawDone) {
+            throw new Error("SSE event received after done.");
+          }
+          sawDone = event.type === "done";
           yield event;
         }
       }
@@ -68,8 +73,15 @@ export async function* parseChatEventStream(
     if (buffer.trim()) {
       const event = parseSseFrame(buffer);
       if (event !== undefined) {
+        if (sawDone) {
+          throw new Error("SSE event received after done.");
+        }
+        sawDone = event.type === "done";
         yield event;
       }
+    }
+    if (!sawDone) {
+      throw new Error("SSE stream ended before the done event.");
     }
   } finally {
     if (!reachedEnd) {
@@ -119,25 +131,181 @@ function parseSseFrame(frame: string): ChatEvent | undefined {
   }
   switch (eventName) {
     case "sources":
-      if (!Array.isArray(payload.sources)) {
+      if (
+        !hasOnlyKeys(payload, ["type", "sources"]) ||
+        !Array.isArray(payload.sources) ||
+        !payload.sources.every(isChatSourceCard)
+      ) {
         throw new Error("Invalid sources SSE envelope.");
       }
       return payload as ChatEvent;
     case "answer":
-      if (!isRecord(payload.answer)) {
+      if (
+        !hasOnlyKeys(payload, ["type", "answer"]) ||
+        !isVerifiedAnswer(payload.answer)
+      ) {
         throw new Error("Invalid answer SSE envelope.");
       }
       return payload as ChatEvent;
     case "error":
-      if (typeof payload.message !== "string") {
+      if (
+        !hasOnlyKeys(payload, ["type", "message"]) ||
+        typeof payload.message !== "string" ||
+        payload.message.length === 0
+      ) {
         throw new Error("Invalid error SSE envelope.");
       }
       return payload as ChatEvent;
     case "done":
+      if (!hasOnlyKeys(payload, ["type"])) {
+        throw new Error("Invalid done SSE envelope.");
+      }
       return payload as ChatEvent;
     default:
       throw new Error(`Unsupported SSE event: ${eventName || "(missing)"}.`);
   }
+}
+
+function isChatSourceCard(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["label", "chunk_id", "tekst", "metadata", "score"])
+  ) {
+    return false;
+  }
+  return (
+    typeof value.label === "string" &&
+    /^\[[1-8]\]$/.test(value.label) &&
+    isUuid(value.chunk_id) &&
+    typeof value.tekst === "string" &&
+    isSourceMetadata(value.metadata) &&
+    typeof value.score === "number" &&
+    Number.isFinite(value.score)
+  );
+}
+
+function isSourceMetadata(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const requiredStrings = [
+    "bwb_id",
+    "regeling_titel",
+    "artikel",
+    "kop_pad",
+    "bron_url",
+    "toestand_url",
+  ];
+  return (
+    requiredStrings.every((key) => typeof value[key] === "string") &&
+    ["lid", "onderdeel", "opschrift"].every(
+      (key) => value[key] === null || typeof value[key] === "string",
+    ) &&
+    isDateString(value.geldig_vanaf) &&
+    (value.geldig_tot === null || isDateString(value.geldig_tot)) &&
+    ["geldend", "toekomstig", "vervallen"].includes(String(value.status)) &&
+    ["geldend", "vervallen"].includes(String(value.artikel_status))
+  );
+}
+
+function isVerifiedAnswer(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "status",
+      "samenvatting",
+      "punten",
+      "voorbehouden",
+      "vervolgstappen",
+      "peildatum",
+      "verifier_notes",
+    ])
+  ) {
+    return false;
+  }
+  if (
+    !["beantwoord", "onzeker", "buiten_scope"].includes(String(value.status)) ||
+    typeof value.samenvatting !== "string" ||
+    value.samenvatting.trim().length === 0 ||
+    value.samenvatting.trim().split(/\s+/).length > 80 ||
+    !Array.isArray(value.punten) ||
+    !value.punten.every(isAnswerPoint) ||
+    (value.status === "beantwoord" && value.punten.length === 0) ||
+    !isNonblankStringArray(value.voorbehouden) ||
+    !Array.isArray(value.vervolgstappen) ||
+    !value.vervolgstappen.every(isFollowUpStep) ||
+    !isDateString(value.peildatum) ||
+    (value.verifier_notes !== undefined &&
+      !isNonblankStringArray(value.verifier_notes))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function isAnswerPoint(value: unknown): boolean {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["tekst", "bron_ids"])) {
+    return false;
+  }
+  return (
+    typeof value.tekst === "string" &&
+    value.tekst.trim().length > 0 &&
+    Array.isArray(value.bron_ids) &&
+    value.bron_ids.length > 0 &&
+    value.bron_ids.every(isUuid) &&
+    new Set(value.bron_ids).size === value.bron_ids.length
+  );
+}
+
+function isFollowUpStep(value: unknown): boolean {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["tekst", "url"])) {
+    return false;
+  }
+  if (typeof value.tekst !== "string" || value.tekst.trim().length === 0) {
+    return false;
+  }
+  if (typeof value.url !== "string") {
+    return false;
+  }
+  try {
+    const protocol = new URL(value.url).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
+function isNonblankStringArray(value: unknown): value is string[] {
+  return isStringArray(value) && value.every((item) => item.trim().length > 0);
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
+}
+
+function isDateString(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(value).every((key) => keys.includes(key));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

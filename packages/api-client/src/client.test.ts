@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createWetviaClient,
+  parseChatEventStream,
   streamChatEvents,
   type ChatEvent,
   type ChatRequest,
@@ -76,6 +77,7 @@ describe("createWetviaClient", () => {
         verifier_notes: ["checked by server"],
       },
     })}\n\n`;
+    const doneFrame = 'event: done\ndata: {"type":"done"}\n\n';
     const sourceBytes = encoder.encode(sourceFrame);
     const answerBytes = encoder.encode(answerFrame);
     const sourceSplit = Math.floor(sourceBytes.length / 2);
@@ -93,6 +95,7 @@ describe("createWetviaClient", () => {
         await answerAllowed;
         controller.enqueue(answerBytes.slice(0, unicodeStart + 1));
         controller.enqueue(answerBytes.slice(unicodeStart + 1));
+        controller.enqueue(encoder.encode(doneFrame));
         controller.close();
       },
     });
@@ -124,10 +127,91 @@ describe("createWetviaClient", () => {
           verifier_notes: ["checked by server"],
         },
       });
+      expect(await events.next()).toMatchObject({
+        done: false,
+        value: { type: "done" },
+      });
       expect(await events.next()).toMatchObject({ done: true });
     } finally {
       releaseAnswer();
       await events.return(undefined);
     }
   });
+
+  it("rejects an incomplete stream that ends before its done event", async () => {
+    const sources = 'event: sources\ndata: {"type":"sources","sources":[]}\n\n';
+    const answer = `event: answer\ndata: ${JSON.stringify({
+      type: "answer",
+      answer: {
+        status: "onzeker",
+        samenvatting: "Synthetic abstention.",
+        punten: [],
+        voorbehouden: [],
+        vervolgstappen: [],
+        peildatum: "2026-10-31",
+        verifier_notes: [],
+      },
+    })}\n\n`;
+
+    await expect(
+      collectEvents(parseChatEventStream(streamOf(sources + answer))),
+    ).rejects.toThrow("SSE stream ended before the done event.");
+  });
+
+  it.each([
+    [
+      "answer",
+      `event: answer\ndata: ${JSON.stringify({ type: "answer", answer: {} })}\n\nevent: done\ndata: {"type":"done"}\n\n`,
+      "Invalid answer SSE envelope.",
+    ],
+    [
+      "source card",
+      `event: sources\ndata: ${JSON.stringify({
+        type: "sources",
+        sources: [
+          {
+            label: "[1]",
+            chunk_id: "1d44e29c-b982-4f28-b789-c5cd24fa2de8",
+            tekst: "Synthetic source.",
+            metadata: {},
+            score: 0.5,
+          },
+        ],
+      })}\n\nevent: done\ndata: {"type":"done"}\n\n`,
+      "Invalid sources SSE envelope.",
+    ],
+  ])("rejects malformed %s payloads", async (_name, frames, message) => {
+    await expect(
+      collectEvents(parseChatEventStream(streamOf(frames))),
+    ).rejects.toThrow(message);
+  });
+
+  it("rejects events after the terminal done event", async () => {
+    const frames =
+      'event: done\ndata: {"type":"done"}\n\n' +
+      'event: sources\ndata: {"type":"sources","sources":[]}\n\n';
+
+    await expect(
+      collectEvents(parseChatEventStream(streamOf(frames))),
+    ).rejects.toThrow("SSE event received after done.");
+  });
 });
+
+function streamOf(text: string): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(text));
+      controller.close();
+    },
+  });
+}
+
+async function collectEvents(
+  events: AsyncGenerator<ChatEvent>,
+): Promise<ChatEvent[]> {
+  const collected: ChatEvent[] = [];
+  for await (const event of events) {
+    collected.push(event);
+  }
+  return collected;
+}
