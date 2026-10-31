@@ -113,20 +113,21 @@ class SentenceTransformersEmbedder:
                     _InputWindow(f"{heading}{separator}{window.text}", window.token_count)
                     for window in body_windows
                 ]
-                if all(
-                    len(self._tokenize(window.text)[0]) <= max_content_tokens
-                    for window in contextual
-                ):
+                contextual = self._fit_windows(contextual, max_content_tokens)
+                if all(self._fits_model_context(window.text) for window in contextual):
                     return contextual
         return self._split_text(text, max_content_tokens)
 
     def _split_text(self, text: str, max_tokens: int) -> list[_InputWindow]:
+        if max_tokens <= 0:
+            raise ValueError("window token budget must be positive")
         token_ids, offsets = self._tokenize(text)
         if len(token_ids) <= max_tokens:
-            return [_InputWindow(text, len(token_ids))]
+            return self._fit_windows([_InputWindow(text, len(token_ids))], max_tokens)
 
         if offsets is None:
-            return self._split_token_ids(text, token_ids, max_tokens)
+            token_windows = self._split_token_ids(text, token_ids, max_tokens)
+            return self._fit_windows(token_windows, max_tokens)
 
         overlap = min(_OVERLAP_TOKENS, max(1, max_tokens // 8))
         windows: list[_InputWindow] = []
@@ -141,7 +142,30 @@ class SentenceTransformersEmbedder:
             if end == len(token_ids):
                 break
             start = max(start + 1, end - overlap)
-        return windows
+        return self._fit_windows(windows, max_tokens)
+
+    def _fit_windows(self, windows: Sequence[_InputWindow], max_tokens: int) -> list[_InputWindow]:
+        """Re-tokenize reconstructed strings and recursively shrink any overflow."""
+        fitted: list[_InputWindow] = []
+        for window in windows:
+            token_count = len(self._tokenize(window.text)[0])
+            if token_count + self._special_tokens <= self._max_seq_length:
+                fitted.append(_InputWindow(window.text, token_count))
+                continue
+
+            if max_tokens <= 1:
+                raise RuntimeError("tokenizer could not split an input to fit the model context")
+            smaller_budget = min(max_tokens - 1, max(1, (max_tokens * 3) // 4))
+            if smaller_budget >= token_count:
+                smaller_budget = token_count - 1
+            if smaller_budget <= 0:
+                raise RuntimeError("tokenizer could not split an input to fit the model context")
+            fitted.extend(self._split_text(window.text, smaller_budget))
+        return fitted
+
+    def _fits_model_context(self, text: str) -> bool:
+        token_count = len(self._tokenize(text)[0])
+        return token_count + self._special_tokens <= self._max_seq_length
 
     def _split_token_ids(
         self, text: str, token_ids: list[int], max_tokens: int
@@ -166,12 +190,13 @@ class SentenceTransformersEmbedder:
                 )
             except TypeError:
                 decoded = decode(ids, skip_special_tokens=True)
-            windows.append(_InputWindow(str(decoded), len(ids)))
+            if decoded:
+                windows.append(_InputWindow(str(decoded), len(ids)))
             if end == len(token_ids):
                 break
             start = max(start + 1, end - overlap)
-        if not windows and text:
-            raise RuntimeError("tokenizer produced no windows for non-empty input")
+        if not windows and token_ids:
+            raise RuntimeError("tokenizer could not decode any input windows")
         return windows
 
     def _tokenize(self, text: str) -> tuple[list[int], list[tuple[int, int]] | None]:

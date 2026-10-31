@@ -49,6 +49,68 @@ class _WhitespaceTokenizer:
         }
 
 
+class _ContextSensitiveTokenizer(_WhitespaceTokenizer):
+    def _encoded(self, text: str) -> dict[str, list[object]]:
+        matches = list(re.finditer(r"\S+", text))
+        input_ids: list[object] = list(range(len(matches)))
+        offsets: list[object] = [(match.start(), match.end()) for match in matches]
+        if matches and matches[0].group() == "marker":
+            # A substring beginning at this boundary gains a token compared
+            # with the same words in the original passage.
+            input_ids.insert(0, -1)
+            offsets.insert(0, (0, 0))
+        return {"input_ids": input_ids, "offset_mapping": offsets}
+
+    def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+        return [int(token) for token in self._encoded(text)["input_ids"]]
+
+    def __call__(
+        self,
+        text: str,
+        *,
+        add_special_tokens: bool = False,
+        return_offsets_mapping: bool = False,
+        truncation: bool = False,
+    ) -> dict[str, list[object]]:
+        return self._encoded(text)
+
+
+class _SlowContextSensitiveTokenizer:
+    """Tokenizer stub without offsets whose decoded windows re-tokenize larger."""
+
+    _CONTEXT_TOKENS = (-3, -2, -1)
+
+    def __init__(self) -> None:
+        self._word_ids: dict[str, int] = {}
+        self._id_words: dict[int, str] = {}
+
+    def num_special_tokens_to_add(self, *, pair: bool = False) -> int:
+        return 2
+
+    def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
+        words = re.findall(r"\S+", text)
+        ids = [self._word_id(word) for word in words]
+        if words and words[0] == "marker":
+            return [*self._CONTEXT_TOKENS, *ids]
+        return ids
+
+    def decode(
+        self,
+        token_ids: list[int],
+        *,
+        skip_special_tokens: bool = True,
+        clean_up_tokenization_spaces: bool = False,
+    ) -> str:
+        return " ".join(self._id_words[token_id] for token_id in token_ids if token_id > 0)
+
+    def _word_id(self, word: str) -> int:
+        if word not in self._word_ids:
+            token_id = len(self._word_ids) + 1
+            self._word_ids[word] = token_id
+            self._id_words[token_id] = word
+        return self._word_ids[word]
+
+
 def _torch_stub(*, cuda: bool, mps: bool) -> SimpleNamespace:
     return SimpleNamespace(
         cuda=SimpleNamespace(is_available=lambda: cuda),
@@ -231,6 +293,45 @@ def test_long_input_tail_is_encoded_and_contributes_to_aggregated_vector() -> No
     assert any("TAIL_MARKER final terms" in text for text in model.encoded_texts)
     assert all(
         len(model.tokenizer.encode(text, add_special_tokens=False)) + 2 <= model.max_seq_length
+        for text in model.encoded_texts
+    )
+    assert vector[1] > 0
+
+
+@pytest.mark.parametrize(
+    "tokenizer",
+    [_ContextSensitiveTokenizer(), _SlowContextSensitiveTokenizer()],
+    ids=["offsets", "decode"],
+)
+def test_reconstructed_windows_are_retokenized_to_fit_context(tokenizer: object) -> None:
+    class ContextSensitiveModel:
+        max_seq_length = 6
+
+        def __init__(self, model_tokenizer: object) -> None:
+            self.tokenizer = model_tokenizer
+            self.encoded_texts: list[str] = []
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return 2
+
+        def encode(self, texts: list[str], **kwargs: object) -> list[list[float]]:
+            self.encoded_texts = texts
+            return [[0.0, 1.0] if "theta" in text else [1.0, 0.0] for text in texts]
+
+    model = ContextSensitiveModel(tokenizer)
+    embedder = SentenceTransformersEmbedder(
+        "stub-model",
+        dimension=2,
+        model=model,
+        torch_module=_torch_stub(cuda=False, mps=False),
+    )
+
+    vector = embedder.embed(["alpha beta gamma marker epsilon zeta eta theta"])[0]
+
+    assert len(model.encoded_texts) > 1
+    assert any("theta" in text for text in model.encoded_texts)
+    assert all(
+        len(tokenizer.encode(text, add_special_tokens=False)) + 2 <= model.max_seq_length
         for text in model.encoded_texts
     )
     assert vector[1] > 0
