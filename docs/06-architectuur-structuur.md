@@ -190,7 +190,7 @@ Elke issue-body krijgt een korte sectie **Structuur (docs/06)**:
 - **#7 CI:** stappen voor `lint-imports` en de OpenAPI-check, en afzonderlijke jobs per pakket.
 - **#8, #9, #24, #31:** alle bronclients (BWB, DSO toepasbare regels, DSO Presenteren, PDOK) horen in `nl_wetten_ingest`, en dat pakket mag `wetvia` niet importeren. Caching en opslag horen in `wetvia.ingest`.
 - **#10 DB-schema + CLI:** tabellen in `db/schema/`, de ingest-logica in `ingest/service.py`, en de Typer-CLI in `wetvia/cli.py` als dunne laag daarboven.
-- **#11 Embeddings:** een nieuwe module `embeddings/` met een `Embedder`-port en een sentence-transformers-adapter.
+- **#11 Embeddings:** `embeddings/` met een `Embedder`-port, lazy sentence-transformers-adapter en pure modelinput-formattering; batchwerk en DB-writes zitten in `ingest/`, de CLI is een dunne laag en bootstrap kiest model/settings.
 - **#12 Retrieval:** een `Retriever`-port in `retrieval/` met een pg-hybride adapter. De endpoints in `api/routes/search.py`, niet in retrieval.
 - **#14, #27 (en #6):** `eval/` wordt een uv-member die alleen de publieke API gebruikt.
 - **#15 Antwoordpipeline:** `Retriever` en `LLMProvider` worden geïnjecteerd, en de prompts gaan naar `answer/prompts/` (niet `llm/prompts`).

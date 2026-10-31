@@ -39,8 +39,8 @@ def test_postgres_only_schema_revision_uses_ini_url_when_database_url_is_blank(
 
     command.upgrade(_alembic_config(f"sqlite:///{database_path}"), "head")
 
-    assert _applied_version(database_path) == "0002_ingest_schema"
-    assert not {"regeling", "toestand", "chunk"} & _table_names(database_path)
+    assert _applied_version(database_path) == "0003_embedding_config"
+    assert not {"regeling", "toestand", "chunk", "embedding_config"} & _table_names(database_path)
 
 
 def test_database_url_overrides_ini_url(
@@ -53,6 +53,6 @@ def test_database_url_overrides_ini_url(
 
     command.upgrade(_alembic_config(f"sqlite:///{from_ini}"), "head")
 
-    assert _applied_version(from_env) == "0002_ingest_schema"
+    assert _applied_version(from_env) == "0003_embedding_config"
     assert not from_ini.exists()
-    assert not {"regeling", "toestand", "chunk"} & _table_names(from_env)
+    assert not {"regeling", "toestand", "chunk", "embedding_config"} & _table_names(from_env)

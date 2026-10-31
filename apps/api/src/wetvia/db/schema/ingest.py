@@ -91,7 +91,9 @@ class ChunkRecord(Base):
         Computed(_TSVECTOR_EXPRESSION, persisted=True),
         nullable=False,
     )
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1024), nullable=True)
+    # Alembic constrains the physical PostgreSQL width; the job reads that width
+    # at runtime so later vector-dimension migrations need no ORM code edit.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("toestand_url", "chunk_index", name="uq_chunk_toestand_index"),

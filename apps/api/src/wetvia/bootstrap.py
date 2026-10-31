@@ -12,7 +12,8 @@ from wetvia.cli import build_cli
 from wetvia.config import Settings
 from wetvia.db import create_db_engine, create_session_factory, database_status
 from wetvia.db.engine import DbStatus
-from wetvia.ingest import IngestService
+from wetvia.embeddings.adapters.sentence_transformers import SentenceTransformersEmbedder
+from wetvia.ingest import EmbeddingJob, IngestService
 from wetvia.llm.adapters.ollama import OllamaProvider
 from wetvia.llm.adapters.openai_compat import OpenAICompatProvider
 from wetvia.llm.ports import LLMProvider
@@ -84,8 +85,21 @@ def run_cli(settings: Settings | None = None) -> None:
     engine = create_db_engine(loaded.database_url)
     try:
         with BwbSRUClient() as source:
-            service = IngestService(create_session_factory(engine), source)
-            build_cli(service)()
+            session_factory = create_session_factory(engine)
+
+            def create_embedding_job() -> EmbeddingJob:
+                embedder = SentenceTransformersEmbedder(
+                    loaded.embedding_model,
+                    dimension=loaded.embedding_dimension,
+                )
+                return EmbeddingJob(
+                    session_factory,
+                    embedder,
+                    batch_size=loaded.embedding_batch_size,
+                )
+
+            service = IngestService(session_factory, source)
+            build_cli(service, create_embedding_job)()
     finally:
         asyncio.run(engine.dispose())
 
