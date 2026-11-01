@@ -15,8 +15,19 @@
   let consentDialog = $state<HTMLDialogElement>();
   let cloudConsentOpen = $state(false);
   let submitAfterConsent = $state(false);
+  let consentConversationId = $state<string | null>(null);
+  let consentConversationGeneration = $state<number | null>(null);
 
   $effect(() => {
+    const currentConversationId = chat.activeConversationId;
+    const currentGeneration = chat.conversationGeneration;
+    if (
+      cloudConsentOpen &&
+      (currentConversationId !== consentConversationId ||
+        currentGeneration !== consentConversationGeneration)
+    ) {
+      cancelCloudChoice();
+    }
     if (cloudConsentOpen && consentDialog && !consentDialog.open) {
       consentDialog.showModal();
     } else if (!cloudConsentOpen && consentDialog?.open) {
@@ -47,8 +58,9 @@
       return;
     }
     if (chat.activeMode === "cloud" && chat.requiresCloudConsent) {
-      submitAfterConsent = true;
-      cloudConsentOpen = true;
+      if (chat.requestCloudConsent()) {
+        openCloudConsent(true);
+      }
       return;
     }
     await chat.submit();
@@ -57,19 +69,28 @@
   async function chooseMode(mode: "local" | "cloud"): Promise<void> {
     const result = await chat.selectMode(mode);
     if (result === "consent-required") {
-      submitAfterConsent = false;
-      cloudConsentOpen = true;
+      openCloudConsent(false);
     }
   }
 
   async function confirmCloudChoice(): Promise<void> {
+    if (!isConsentConversationCurrent()) {
+      cancelCloudChoice();
+      return;
+    }
+    const shouldSubmit = submitAfterConsent;
     const confirmed = await chat.confirmCloudConsent();
     if (!confirmed) {
       return;
     }
+    if (!isConsentConversationCurrent()) {
+      cancelCloudChoice();
+      return;
+    }
     cloudConsentOpen = false;
-    if (submitAfterConsent) {
-      submitAfterConsent = false;
+    chat.cancelCloudConsent();
+    clearConsentTarget();
+    if (shouldSubmit) {
       await chat.submit();
     }
   }
@@ -78,6 +99,27 @@
     event?.preventDefault();
     cloudConsentOpen = false;
     submitAfterConsent = false;
+    chat.cancelCloudConsent();
+    clearConsentTarget();
+  }
+
+  function openCloudConsent(shouldSubmit: boolean): void {
+    submitAfterConsent = shouldSubmit;
+    consentConversationId = chat.activeConversationId;
+    consentConversationGeneration = chat.conversationGeneration;
+    cloudConsentOpen = true;
+  }
+
+  function isConsentConversationCurrent(): boolean {
+    return (
+      chat.activeConversationId === consentConversationId &&
+      chat.conversationGeneration === consentConversationGeneration
+    );
+  }
+
+  function clearConsentTarget(): void {
+    consentConversationId = null;
+    consentConversationGeneration = null;
   }
 
   function useStarter(question: string): void {

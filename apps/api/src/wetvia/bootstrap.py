@@ -1,6 +1,7 @@
 """Composition root. This is the only module that constructs ``Settings``."""
 
 import asyncio
+import ipaddress
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -74,8 +75,8 @@ def package_version() -> str:
 def get_provider(settings: Settings) -> LLMProvider:
     """Build one explicitly selected adapter for legacy consumers and tests."""
     if settings.llm_provider == "ollama":
-        if not settings.llm_base_url.strip() or not settings.llm_model.strip():
-            raise RuntimeError("local LLM URL and model must be configured")
+        if not _is_trusted_local_endpoint(settings.llm_base_url) or not settings.llm_model.strip():
+            raise RuntimeError("local LLM must use a trusted same-machine URL and model")
         return get_ollama_provider(base_url=settings.llm_base_url, model=settings.llm_model)
     if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value().strip():
         raise RuntimeError("LLM_API_KEY is required when LLM_PROVIDER is openai_compat")
@@ -95,7 +96,7 @@ def get_provider(settings: Settings) -> LLMProvider:
 def get_chat_providers(settings: Settings) -> dict[ChatMode, LLMProvider]:
     """Build the configured local/cloud adapters for per-request selection."""
     providers: dict[ChatMode, LLMProvider] = {}
-    if settings.llm_base_url.strip() and settings.llm_model.strip():
+    if _is_trusted_local_endpoint(settings.llm_base_url) and settings.llm_model.strip():
         providers["local"] = get_ollama_provider(
             base_url=settings.llm_base_url,
             model=settings.llm_model,
@@ -114,6 +115,40 @@ def get_chat_providers(settings: Settings) -> dict[ChatMode, LLMProvider]:
             api_key=cloud_key,
         )
     return providers
+
+
+def _is_trusted_local_endpoint(value: str) -> bool:
+    """Accept only loopback Ollama endpoints and our Docker-to-host alias.
+
+    The selected mode is disclosed to users as local, so an arbitrary Ollama
+    compatible URL must never inherit that label. Docker Compose explicitly
+    maps ``host.docker.internal`` to the host gateway and offers ``ollama`` as
+    a service alias in its GPU profile.
+    """
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+        hostname = parsed.hostname
+    except ValueError:
+        return False
+    if (
+        parsed.scheme not in {"http", "https"}
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        return False
+    if port is not None and not 1 <= port <= 65535:
+        return False
+    normalized_host = hostname.rstrip(".").lower()
+    if normalized_host in {"host.docker.internal", "ollama"}:
+        return True
+    try:
+        return ipaddress.ip_address(normalized_host).is_loopback
+    except ValueError:
+        return normalized_host == "localhost"
 
 
 def _is_scaleway_endpoint(value: str) -> bool:

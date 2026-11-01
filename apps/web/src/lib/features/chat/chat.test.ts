@@ -226,6 +226,7 @@ describe("ChatStore", () => {
     expect(calls).toBe(0);
     expect(chat.draft).toBe("Synthetic restored cloud follow-up?");
 
+    expect(await chat.selectMode("cloud")).toBe("consent-required");
     expect(await chat.confirmCloudConsent()).toBe(true);
     await chat.submit();
     expect(calls).toBe(1);
@@ -245,6 +246,77 @@ describe("ChatStore", () => {
 
     expect(await chat.selectMode("local")).toBe("unavailable");
     expect(chat.activeMode).toBe("local");
+  });
+
+  it("does not apply a delayed mode write after switching conversations", async () => {
+    const repository = new DelayedUpdateConversationRepository();
+    const cloudConversation = {
+      ...syntheticConversation(
+        "conversation-cloud",
+        "Synthetic cloud conversation",
+        "2026-10-01T12:00:00.000Z",
+      ),
+      mode: "cloud" as const,
+      cloudConsentVersion: CLOUD_CONSENT_VERSION,
+      cloudConsentAt: "2026-10-01T12:00:00.000Z",
+    };
+    const localConversation = syntheticConversation(
+      "conversation-local",
+      "Synthetic local conversation",
+      "2026-10-02T12:00:00.000Z",
+    );
+    await repository.create(cloudConversation);
+    await repository.create(localConversation);
+    const chat = new ChatStore(
+      emptyStream,
+      new SourcesStore(),
+      new ConversationHistoryStore(repository),
+    );
+    chat.setConfiguredChatModes({ local: true, cloud: true });
+    await chat.hydrate();
+    await chat.openConversation(cloudConversation.id);
+
+    const gate = repository.delayNextUpdate(cloudConversation.id);
+    const selecting = chat.selectMode("local");
+    await gate.started;
+    await chat.openConversation(localConversation.id);
+    gate.release();
+
+    expect(await selecting).toBe("stale");
+    expect(chat.activeConversationId).toBe(localConversation.id);
+    expect(chat.activeMode).toBe("local");
+    expect(chat.cloudConsentVersion).toBeNull();
+    expect(chat.cloudConsentAt).toBeNull();
+  });
+
+  it("does not apply delayed consent to a new conversation", async () => {
+    const repository = new DelayedUpdateConversationRepository();
+    const conversation = syntheticConversation(
+      "conversation-awaiting-consent",
+      "Synthetic consent conversation",
+      "2026-10-01T12:00:00.000Z",
+    );
+    await repository.create(conversation);
+    const chat = new ChatStore(
+      emptyStream,
+      new SourcesStore(),
+      new ConversationHistoryStore(repository),
+    );
+    chat.setConfiguredChatModes({ local: true, cloud: true });
+    await chat.hydrate();
+    expect(await chat.selectMode("cloud")).toBe("consent-required");
+
+    const gate = repository.delayNextUpdate(conversation.id);
+    const confirming = chat.confirmCloudConsent();
+    await gate.started;
+    chat.newConversation();
+    gate.release();
+
+    expect(await confirming).toBe(false);
+    expect(chat.activeConversationId).toBeNull();
+    expect(chat.activeMode).toBe("local");
+    expect(chat.cloudConsentVersion).toBeNull();
+    expect(chat.cloudConsentAt).toBeNull();
   });
 
   it("stores the first question in the conversation's initial IndexedDB write", async () => {
@@ -576,6 +648,36 @@ class DelayedLoadConversationRepository extends MemoryConversationRepository {
       await this.releasePromise;
     }
     return super.get(id);
+  }
+}
+
+class DelayedUpdateConversationRepository extends MemoryConversationRepository {
+  private delayedId: string | null = null;
+  private startedResolve: () => void = () => undefined;
+  private releaseResolve: () => void = () => undefined;
+  private releasePromise: Promise<void> = Promise.resolve();
+
+  delayNextUpdate(id: string): { started: Promise<void>; release: () => void } {
+    this.delayedId = id;
+    const started = new Promise<void>((resolve) => {
+      this.startedResolve = resolve;
+    });
+    this.releasePromise = new Promise((resolve) => {
+      this.releaseResolve = resolve;
+    });
+    return { started, release: () => this.releaseResolve() };
+  }
+
+  override async update(
+    id: string,
+    patch: ConversationPatch,
+  ): Promise<StoredConversation> {
+    if (id === this.delayedId) {
+      this.delayedId = null;
+      this.startedResolve();
+      await this.releasePromise;
+    }
+    return super.update(id, patch);
   }
 }
 

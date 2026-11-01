@@ -33,6 +33,13 @@ const INTERRUPTED_ERROR =
 const CLOUD_UNAVAILABLE = "Cloud (EU) is op dit moment niet geconfigureerd.";
 const CLOUD_CONSENT_REQUIRED = "Bevestig eerst de verwerking in Cloud (EU).";
 
+type ConversationContext = {
+  conversationId: string | null;
+  generation: number;
+};
+
+type PendingCloudConsent = ConversationContext & { operationId: number };
+
 export function currentDateISO(now = Date.now()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     year: "numeric",
@@ -83,12 +90,16 @@ export class ChatStore {
   modeAvailabilityStatus = $state<"loading" | "loaded" | "error">("loading");
   cloudConsentVersion = $state<number | null>(null);
   cloudConsentAt = $state<string | null>(null);
+  conversationGeneration = $state(0);
 
   private readonly stream: ChatStreamer;
   private readonly sources: SourcesStore;
   private readonly history: ConversationHistoryStore;
   private requestId = 0;
   private loadId = 0;
+  private conversationGenerationValue = 0;
+  private modeOperationId = 0;
+  private pendingCloudConsent: PendingCloudConsent | null = null;
   private controller: AbortController | null = null;
 
   constructor(
@@ -136,7 +147,12 @@ export class ChatStore {
 
   async selectMode(
     mode: ConversationMode,
-  ): Promise<"selected" | "consent-required" | "unavailable" | "save-failed"> {
+  ): Promise<
+    "selected" | "consent-required" | "unavailable" | "save-failed" | "stale"
+  > {
+    const operationId = ++this.modeOperationId;
+    this.pendingCloudConsent = null;
+    const context = this.captureConversationContext();
     if (mode === "local" && this.localAvailable === false) {
       return "unavailable";
     }
@@ -145,25 +161,55 @@ export class ChatStore {
         return "unavailable";
       }
       if (!this.hasCurrentCloudConsent) {
+        this.pendingCloudConsent = { ...context, operationId };
         return "consent-required";
       }
     }
-    if (this.activeConversationId) {
-      const saved = await this.history.updateMode(
-        this.activeConversationId,
-        mode,
-      );
+    if (context.conversationId) {
+      const saved = await this.history.updateMode(context.conversationId, mode);
+      if (!this.isCurrentModeOperation(context, operationId)) {
+        return "stale";
+      }
       if (!saved) {
         this.notice = this.history.storageError;
         return "save-failed";
       }
+    }
+    if (!this.isCurrentModeOperation(context, operationId)) {
+      return "stale";
     }
     this.activeMode = mode;
     this.notice = null;
     return "selected";
   }
 
+  requestCloudConsent(): boolean {
+    if (this.cloudAvailable !== true) {
+      this.notice = CLOUD_UNAVAILABLE;
+      return false;
+    }
+    const operationId = ++this.modeOperationId;
+    this.pendingCloudConsent = {
+      ...this.captureConversationContext(),
+      operationId,
+    };
+    return true;
+  }
+
+  cancelCloudConsent(): void {
+    this.modeOperationId += 1;
+    this.pendingCloudConsent = null;
+  }
+
   async confirmCloudConsent(): Promise<boolean> {
+    const pending = this.pendingCloudConsent;
+    if (
+      !pending ||
+      !this.isCurrentModeOperation(pending, pending.operationId)
+    ) {
+      this.pendingCloudConsent = null;
+      return false;
+    }
     if (this.cloudAvailable !== true) {
       this.notice = CLOUD_UNAVAILABLE;
       return false;
@@ -173,16 +219,21 @@ export class ChatStore {
       cloudConsentAt: new SvelteDate().toISOString(),
     };
     if (
-      this.activeConversationId &&
-      !(await this.history.updateMode(
-        this.activeConversationId,
-        "cloud",
-        consent,
-      ))
+      pending.conversationId &&
+      !(await this.history.updateMode(pending.conversationId, "cloud", consent))
     ) {
-      this.notice = this.history.storageError;
+      if (this.isCurrentModeOperation(pending, pending.operationId)) {
+        this.notice = this.history.storageError;
+      }
       return false;
     }
+    if (
+      !this.isCurrentModeOperation(pending, pending.operationId) ||
+      this.pendingCloudConsent !== pending
+    ) {
+      return false;
+    }
+    this.pendingCloudConsent = null;
     this.activeMode = "cloud";
     this.cloudConsentVersion = consent.cloudConsentVersion;
     this.cloudConsentAt = consent.cloudConsentAt;
@@ -192,6 +243,7 @@ export class ChatStore {
 
   async hydrate(): Promise<void> {
     const loadId = ++this.loadId;
+    this.advanceConversationGeneration();
     const conversations = await this.history.hydrate();
     if (loadId !== this.loadId) {
       return;
@@ -214,6 +266,7 @@ export class ChatStore {
   async openConversation(id: string): Promise<void> {
     this.invalidateActiveRequest();
     const loadId = ++this.loadId;
+    this.advanceConversationGeneration();
     const wasReady = this.ready;
     this.ready = false;
     this.notice = null;
@@ -233,6 +286,7 @@ export class ChatStore {
   newConversation(): void {
     this.invalidateActiveRequest();
     this.loadId += 1;
+    this.advanceConversationGeneration();
     this.history.setActive(null);
     this.activeMode = "local";
     this.cloudConsentVersion = null;
@@ -446,6 +500,31 @@ export class ChatStore {
     this.controller?.abort();
     this.controller = null;
     this.sending = false;
+  }
+
+  private captureConversationContext(): ConversationContext {
+    return {
+      conversationId: this.history.activeId,
+      generation: this.conversationGeneration,
+    };
+  }
+
+  private isCurrentModeOperation(
+    context: ConversationContext,
+    operationId: number,
+  ): boolean {
+    return (
+      context.generation === this.conversationGeneration &&
+      context.conversationId === this.history.activeId &&
+      operationId === this.modeOperationId
+    );
+  }
+
+  private advanceConversationGeneration(): void {
+    this.conversationGenerationValue += 1;
+    this.conversationGeneration = this.conversationGenerationValue;
+    this.modeOperationId += 1;
+    this.pendingCloudConsent = null;
   }
 
   private async persistConversation(id: string): Promise<void> {

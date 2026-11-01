@@ -94,6 +94,9 @@ counter for their generator tokenizer.
 always identifies local as the default. This describes configuration only; it
 does not probe whether an inference endpoint is reachable. Cloud is configured
 only with the pinned Scaleway endpoint, a model name, and `LLM_API_KEY`.
+Local mode is configured only for loopback Ollama URLs or the exact Docker
+aliases `host.docker.internal` and `ollama` used by this repository's Compose
+setup. Other HTTP(S) hosts are not advertised or routed as local.
 
 `POST /api/chat` accepts `messages`, an optional `peildatum`, and an optional
 `mode` (`local` or `cloud`). Messages may have only `user` and `assistant`

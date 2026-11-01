@@ -222,8 +222,10 @@ zodanig gemarkeerd en levert geen uitspraak over Wetvia-kwaliteit op.
 | **Lokaal** (standaard) | Ollama | lokaal (e5) | **Nee** (behalve publieke bron-API's, zonder gebruikersdata) |
 | **Cloud** (opt-in per gesprek) | Scaleway (Parijs, EU) | lokaal (e5) | Ja: alleen de huidige vraag + geselecteerde bronnen naar Scaleway. Melding in de UI + DPA |
 
-De API maakt de lokale Ollama-provider klaar wanneer de lokale URL en modelnaam
-zijn ingevuld. Cloud wordt alleen als geconfigureerd gemeld wanneer de
+De API maakt de lokale Ollama-provider klaar wanneer een loopback-URL of de
+Docker-alias `host.docker.internal`/`ollama` en een modelnaam zijn ingevuld;
+andere HTTP(S)-hosts worden niet als lokaal geadverteerd of gerouteerd. Cloud
+wordt alleen als geconfigureerd gemeld wanneer de
 Scaleway-endpoint `https://api.scaleway.ai/v1`, modelnaam en `LLM_API_KEY`
 allemaal aanwezig zijn. Een willekeurige OpenAI-compatibele URL bewijst geen
 EU-hosting en wordt voor deze cloudmodus niet gebruikt. `/api/health` meldt

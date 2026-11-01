@@ -14,12 +14,13 @@ def _settings(
     *,
     llm_provider: LlmProvider = "ollama",
     llm_api_key: str | None = None,
+    llm_base_url: str = "http://127.0.0.1:11434",
 ) -> Settings:
     return Settings(
         _env_file=None,
         database_url="postgresql+psycopg://wetvia:change-me@127.0.0.1:5432/wetvia",
         llm_provider=llm_provider,
-        llm_base_url="http://127.0.0.1:11434",
+        llm_base_url=llm_base_url,
         llm_model="qwen3.5:9b",
         cloud_llm_base_url="https://api.scaleway.ai/v1",
         cloud_llm_model="qwen3.8-27b",
@@ -170,6 +171,58 @@ def test_blank_provider_settings_are_not_reported_as_configured() -> None:
     )
 
     assert get_chat_providers(settings) == {}
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:11434",
+        "http://127.0.0.1:11434",
+        "https://[::1]:11434",
+        # docker-compose.yml maps this exact alias to the host gateway.
+        "http://host.docker.internal:11434",
+        # The optional gpu-linux profile connects to this Compose service name.
+        "http://ollama:11434",
+    ],
+)
+def test_local_mode_accepts_only_trusted_same_machine_endpoints(base_url: str) -> None:
+    assert set(get_chat_providers(_settings(llm_base_url=base_url))) == {"local"}
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://192.168.1.25:11434",
+        "https://ollama.example.test:11434",
+        "https://203.0.113.45:11434",
+    ],
+)
+def test_local_mode_rejects_remote_http_and_https_endpoints(base_url: str) -> None:
+    settings = _settings(llm_base_url=base_url)
+
+    assert "local" not in get_chat_providers(settings)
+    with pytest.raises(RuntimeError, match="trusted same-machine"):
+        from wetvia.bootstrap import get_provider
+
+        get_provider(settings)
+
+
+def test_remote_ollama_url_is_not_advertised_as_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import wetvia.bootstrap as bootstrap
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            return None
+
+    monkeypatch.setattr(bootstrap, "create_db_engine", lambda _url: FakeEngine())
+    monkeypatch.setattr(bootstrap, "create_session_factory", lambda _engine: object())
+    app = build_app(_settings(llm_base_url="https://ollama.example.test:11434"))
+
+    assert app.state.health_context.local_configured is False
+    assert "local" not in app.state.llm_providers
+    assert "local" not in app.state.answer_pipelines
 
 
 @pytest.mark.parametrize("api_key", [None, " "])
