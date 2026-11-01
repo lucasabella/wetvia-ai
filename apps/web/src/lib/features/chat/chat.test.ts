@@ -177,14 +177,14 @@ describe("ChatStore", () => {
 
   it("blocks submit while a selected conversation is still loading", async () => {
     const repository = new DelayedLoadConversationRepository();
-    await repository.save(
+    await repository.create(
       syntheticConversation(
         "conversation-a",
         "Synthetic conversation A",
         "2026-10-01T12:00:00.000Z",
       ),
     );
-    await repository.save(
+    await repository.create(
       syntheticConversation(
         "conversation-b",
         "Synthetic conversation B",
@@ -386,7 +386,19 @@ class MemoryConversationRepository implements ConversationRepository {
     return this.rows.get(id);
   }
 
-  async save(conversation: StoredConversation): Promise<void> {
+  async create(conversation: StoredConversation): Promise<void> {
+    if (this.rows.has(conversation.id)) {
+      throw new Error("Conversation already exists.");
+    }
+    const snapshot = structuredClone(conversation);
+    this.saves.push(snapshot);
+    this.rows.set(conversation.id, snapshot);
+  }
+
+  async update(conversation: StoredConversation): Promise<void> {
+    if (!this.rows.has(conversation.id)) {
+      throw new Error("Conversation no longer exists.");
+    }
     const snapshot = structuredClone(conversation);
     this.saves.push(snapshot);
     this.rows.set(conversation.id, snapshot);

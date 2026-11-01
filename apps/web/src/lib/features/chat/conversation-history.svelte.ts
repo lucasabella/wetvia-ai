@@ -94,7 +94,7 @@ export class ConversationHistoryStore {
     };
     try {
       await this.enqueue(conversation.id, () =>
-        this.repository.save(conversation),
+        this.repository.create(conversation),
       );
       this.upsertSummary(conversation);
       return { conversation, persisted: true };
@@ -115,7 +115,7 @@ export class ConversationHistoryStore {
           messages,
           updatedAt: new SvelteDate().toISOString(),
         };
-        await this.repository.save(updated);
+        await this.repository.update(updated);
         this.upsertSummary(updated);
       });
       return true;
@@ -141,7 +141,7 @@ export class ConversationHistoryStore {
           title,
           updatedAt: new SvelteDate().toISOString(),
         };
-        await this.repository.save(updated);
+        await this.repository.update(updated);
         this.upsertSummary(updated);
         renamed = true;
       });

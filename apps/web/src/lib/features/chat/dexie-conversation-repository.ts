@@ -8,6 +8,8 @@ import type {
 } from "./conversation-repository";
 
 const DATABASE_NAME = "wetvia-chat-history";
+const INVALID_RECORD_ERROR = "Stored conversation is corrupt or unsupported.";
+const MISSING_RECORD_ERROR = "Stored conversation no longer exists.";
 
 class WetviaChatDatabase extends Dexie {
   conversations!: Table<StoredConversation, string>;
@@ -51,12 +53,37 @@ export class DexieConversationRepository implements ConversationRepository {
     });
   }
 
-  get(id: string): Promise<StoredConversation | undefined> {
-    return this.database.conversations.get(id);
+  async get(id: string): Promise<StoredConversation | undefined> {
+    const value: unknown = await this.database.conversations.get(id);
+    if (value === undefined) {
+      return undefined;
+    }
+    const parsed = parseConversation(value);
+    if (parsed.kind !== "valid" || parsed.conversation.id !== id) {
+      throw new Error(INVALID_RECORD_ERROR);
+    }
+    return parsed.conversation;
   }
 
-  async save(conversation: StoredConversation): Promise<void> {
-    await this.database.conversations.put(conversation);
+  async create(conversation: StoredConversation): Promise<void> {
+    assertValidConversation(conversation);
+    const table = this.database.conversations;
+    await this.database.transaction("rw", table, () =>
+      table.add(conversation).then(() => undefined),
+    );
+  }
+
+  async update(conversation: StoredConversation): Promise<void> {
+    assertValidConversation(conversation);
+    const table = this.database.conversations;
+    await this.database.transaction("rw", table, async () => {
+      const current: unknown = await table.get(conversation.id);
+      if (current === undefined) {
+        throw new Error(MISSING_RECORD_ERROR);
+      }
+      assertValidConversation(current, conversation.id);
+      await table.put(conversation);
+    });
   }
 
   async delete(id: string): Promise<void> {
@@ -106,6 +133,19 @@ function parseConversation(value: unknown): ParsedConversation {
     kind: "valid",
     conversation: value as unknown as StoredConversation,
   };
+}
+
+function assertValidConversation(
+  value: unknown,
+  expectedId?: string,
+): asserts value is StoredConversation {
+  const parsed = parseConversation(value);
+  if (
+    parsed.kind !== "valid" ||
+    (expectedId !== undefined && parsed.conversation.id !== expectedId)
+  ) {
+    throw new Error(INVALID_RECORD_ERROR);
+  }
 }
 
 function isStoredTurn(value: unknown): boolean {

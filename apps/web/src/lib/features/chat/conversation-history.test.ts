@@ -2,6 +2,8 @@ import "fake-indexeddb/auto";
 
 import Dexie from "dexie";
 import { afterEach, describe, expect, it } from "vitest";
+import { SourcesStore } from "../sources/sources.svelte";
+import { ChatStore, type ChatStreamer } from "./chat.svelte";
 
 import {
   ConversationHistoryStore,
@@ -18,8 +20,10 @@ import type {
 describe("ConversationHistoryStore", () => {
   const databaseNames: string[] = [];
   const repositories: DexieConversationRepository[] = [];
+  const rawDatabases: Dexie[] = [];
 
   afterEach(async () => {
+    rawDatabases.splice(0).forEach((database) => database.close());
     repositories.splice(0).forEach((repository) => repository.close());
     await Promise.all(
       databaseNames.splice(0).map((name) => new Dexie(name).delete()),
@@ -109,6 +113,7 @@ describe("ConversationHistoryStore", () => {
     await original.create("Synthetic valid conversation two");
 
     const corruptWriter = new Dexie(name);
+    rawDatabases.push(corruptWriter);
     corruptWriter.version(1).stores({
       conversations: "id, mode, createdAt, updatedAt",
     });
@@ -122,7 +127,6 @@ describe("ConversationHistoryStore", () => {
       createdAt: "2026-10-31T12:00:00.000Z",
       updatedAt: "2026-10-31T12:00:00.000Z",
     });
-    corruptWriter.close();
 
     const restored = new ConversationHistoryStore(
       createRepository(name, repositories),
@@ -139,11 +143,72 @@ describe("ConversationHistoryStore", () => {
     );
     expect(restored.skippedRecords).toBe(1);
     expect((await repository.list()).skippedRecords).toBe(1);
-    expect(await repository.get("corrupt-record")).toMatchObject({
+    expect(
+      await corruptWriter.table("conversations").get("corrupt-record"),
+    ).toMatchObject({
       id: "corrupt-record",
       title: 42,
     });
+    await expect(repository.get("corrupt-record")).rejects.toThrow(
+      "Stored conversation is corrupt or unsupported.",
+    );
   });
+
+  it.each(["corrupt", "future-version"] as const)(
+    "does not open, rename, or overwrite a summarized %s row",
+    async (kind) => {
+      const name = databaseName(databaseNames);
+      const repository = createRepository(name, repositories);
+      const history = new ConversationHistoryStore(repository);
+      await history.hydrate();
+      const created = await history.create("Synthetic row before corruption");
+      const id = created.conversation.id;
+
+      const chat = new ChatStore(emptyChatStream, new SourcesStore(), history);
+      await chat.hydrate();
+      expect(history.conversations.map((item) => item.id)).toContain(id);
+
+      const rawDatabase = new Dexie(name);
+      rawDatabases.push(rawDatabase);
+      rawDatabase.version(1).stores({
+        conversations: "id, mode, createdAt, updatedAt",
+      });
+      await rawDatabase.open();
+      const corruptRow = {
+        schemaVersion: kind === "future-version" ? 2 : 1,
+        id,
+        title: kind === "future-version" ? "Newer schema" : 42,
+        messages: [],
+        mode: "backend-default",
+        createdAt: "2026-10-31T12:00:00.000Z",
+        updatedAt: "2026-10-31T12:00:00.000Z",
+      };
+      await rawDatabase.table("conversations").put(corruptRow);
+
+      await expect(repository.get(id)).rejects.toThrow(
+        "Stored conversation is corrupt or unsupported.",
+      );
+      await chat.openConversation(id);
+      expect(chat.activeConversationId).toBe(id);
+      expect(chat.notice).toBe("Dit gesprek kon niet worden geopend.");
+      expect(history.storageError).toBe(
+        "De lokale gespreksopslag kon niet worden bijgewerkt.",
+      );
+      expect(
+        await chat.renameConversation(id, "Synthetic attempted rename"),
+      ).toBe(false);
+      expect(await history.saveMessages(id, [])).toBe(false);
+      await expect(
+        repository.update({
+          ...created.conversation,
+          title: "Synthetic attempted overwrite",
+        }),
+      ).rejects.toThrow("Stored conversation is corrupt or unsupported.");
+      expect(await rawDatabase.table("conversations").get(id)).toEqual(
+        corruptRow,
+      );
+    },
+  );
 
   it("reports a missing conversation instead of claiming its messages were saved", async () => {
     const history = new ConversationHistoryStore(new FailingRepository());
@@ -153,6 +218,45 @@ describe("ConversationHistoryStore", () => {
     expect(history.storageError).toBe(
       "De lokale gespreksopslag kon niet worden bijgewerkt.",
     );
+  });
+
+  it("inserts on create and never resurrects a row deleted through another repository", async () => {
+    const name = databaseName(databaseNames);
+    const repository = createRepository(name, repositories);
+    const otherRepository = createRepository(name, repositories);
+    const history = new ConversationHistoryStore(repository);
+    await history.hydrate();
+
+    const first = await history.create("Synthetic cross-tab delete question");
+    await expect(
+      otherRepository.create({
+        ...first.conversation,
+        title: "Synthetic duplicate create must not replace",
+      }),
+    ).rejects.toThrow();
+    expect((await otherRepository.get(first.conversation.id))?.title).toBe(
+      first.conversation.title,
+    );
+
+    await otherRepository.delete(first.conversation.id);
+    expect(
+      await history.rename(
+        first.conversation.id,
+        "Synthetic rename after external delete",
+      ),
+    ).toBe(false);
+    expect(await history.saveMessages(first.conversation.id, [])).toBe(false);
+    expect(await repository.get(first.conversation.id)).toBeUndefined();
+
+    const second = await history.create("Synthetic cross-tab update race");
+    await Promise.allSettled([
+      otherRepository.update({
+        ...second.conversation,
+        title: "Synthetic concurrent update",
+      }),
+      repository.delete(second.conversation.id),
+    ]);
+    expect(await otherRepository.get(second.conversation.id)).toBeUndefined();
   });
 
   it("clears after delayed writes and rejects writes started during clear-all", async () => {
@@ -258,6 +362,10 @@ function databaseName(names: string[]): string {
   return name;
 }
 
+const emptyChatStream: ChatStreamer = async function* () {
+  // This test exercises local restoration only.
+};
+
 function createRepository(
   name: string,
   repositories: DexieConversationRepository[],
@@ -276,7 +384,11 @@ class FailingRepository implements ConversationRepository {
     return undefined;
   }
 
-  async save(): Promise<void> {
+  async create(): Promise<void> {
+    throw new Error("Synthetic storage failure");
+  }
+
+  async update(): Promise<void> {
     throw new Error("Synthetic storage failure");
   }
 
@@ -351,11 +463,18 @@ class DelayedSaveRepository implements ConversationRepository {
     return this.rows.get(id);
   }
 
-  async save(conversation: StoredConversation): Promise<void> {
+  async create(conversation: StoredConversation): Promise<void> {
     if (this.delay) {
       this.delay = false;
       this.startedResolve();
       await this.releasePromise;
+    }
+    this.rows.set(conversation.id, structuredClone(conversation));
+  }
+
+  async update(conversation: StoredConversation): Promise<void> {
+    if (!this.rows.has(conversation.id)) {
+      throw new Error("Conversation no longer exists.");
     }
     this.rows.set(conversation.id, structuredClone(conversation));
   }

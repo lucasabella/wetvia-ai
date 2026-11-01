@@ -25,7 +25,10 @@ export type ConversationListResult = {
 export interface ConversationRepository {
   list(): Promise<ConversationListResult>;
   get(id: string): Promise<StoredConversation | undefined>;
-  save(conversation: StoredConversation): Promise<void>;
+  /** Insert a new conversation without replacing an existing ID. */
+  create(conversation: StoredConversation): Promise<void>;
+  /** Update a valid existing conversation atomically; never upsert. */
+  update(conversation: StoredConversation): Promise<void>;
   delete(id: string): Promise<void>;
   clear(): Promise<void>;
 }
