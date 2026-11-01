@@ -46,6 +46,16 @@ forms. The generated `@wetvia/api-client` carries the request and response
 types. The route maps input to `DakkapelInvoer` and does not duplicate the
 legal thresholds.
 
+`POST /api/dossier/dakkapel?format=docx|pdf|md` returns a typed attachment.
+The request contains the rule input and an optional location; no client result
+is accepted. Applicant details remain placeholders. The local provider writes
+only the short project description and never receives the location; cloud chat
+providers are not used for dossier generation. The checklist is marked
+`not_retrieved` with no items until issue #24 supplies a verified DSO-LV result.
+DOCX and PDF rendering run off the async event loop. Linux deployments need
+WeasyPrint's Cairo, Pango, Fontconfig and GDK-Pixbuf runtime libraries; CI
+installs these explicitly. PDF template rendering rejects resource fetching.
+
 The stored vector defaults to 1024 dimensions, matching the initial
 `Vector(1024)` migration. The database records the active model ID and dimension,
 and the job refuses to mix vector spaces. To switch models at the same

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Conceptdossier dakkapel</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 22mm 18mm 25mm;
+        @bottom-center {
+          content: "CONCEPT, gemaakt met Wetvia (AI). Niet gecontroleerd door een deskundige.";
+          font-size: 8pt;
+          color: #4b5563;
+        }
+      }
+      body {
+        font: 10.5pt sans-serif;
+        color: #172033;
+        line-height: 1.45;
+      }
+      h1,
+      h2,
+      h3 {
+        color: #15344c;
+      }
+      h1 {
+        font-size: 22pt;
+        margin-bottom: 4pt;
+      }
+      h2 {
+        font-size: 15pt;
+        border-bottom: 1px solid #aab8c4;
+        padding-bottom: 4pt;
+        margin-top: 20pt;
+      }
+      h3 {
+        font-size: 11.5pt;
+        margin-bottom: 4pt;
+      }
+      .watermark {
+        position: fixed;
+        top: 36%;
+        left: 8%;
+        z-index: -1;
+        transform: rotate(-34deg);
+        color: #808080;
+        opacity: 0.12;
+        font-size: 64pt;
+        font-weight: bold;
+        letter-spacing: 8pt;
+      }
+      .disclosure {
+        font-weight: bold;
+        border: 2px solid #9a3412;
+        color: #7c2d12;
+        padding: 8pt;
+      }
+      .muted {
+        color: #526071;
+        font-size: 9pt;
+      }
+      .item {
+        break-inside: avoid;
+        margin: 10pt 0;
+        padding: 8pt;
+        border: 1px solid #c7d0d9;
+      }
+      blockquote {
+        border-left: 2px solid #52758f;
+        padding-left: 8pt;
+        margin-left: 0;
+        font-family: serif;
+      }
+      a {
+        color: #135b8c;
+        overflow-wrap: anywhere;
+      }
+      ul {
+        padding-left: 18pt;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="watermark" aria-hidden="true">CONCEPT</div>
+    <h1>Conceptdossier dakkapel</h1>
+    <p class="disclosure">{{ dossier.disclosure }}</p>
+
+    <h2>Aanvrager</h2>
+    <p>Naam: {{ dossier.aanvrager.naam }}</p>
+    <p>Contactgegevens: {{ dossier.aanvrager.contactgegevens }}</p>
+
+    <h2>Project</h2>
+    <p>Locatie: {{ dossier.locatie }}</p>
+    <p>Peildatum: {{ dossier.peildatum }}</p>
+    <p>{{ dossier.projectomschrijving }}</p>
+
+    <h2>Ingevoerde feiten</h2>
+    <ul>
+      <li>Dakvlak: {{ dossier.invoer.dakvlak }}</li>
+      <li>
+        Naar openbaar toegankelijk gebied: {% if
+        dossier.invoer.dakvlak_naar_openbaar_toegankelijk_gebied is sameas true
+        %}ja{% elif dossier.invoer.dakvlak_naar_openbaar_toegankelijk_gebied is
+        sameas false %}nee{% else %}onbekend{% endif %}
+      </li>
+      <li>
+        Plat dak: {% if dossier.invoer.plat_dak is sameas true %}ja{% elif
+        dossier.invoer.plat_dak is sameas false %}nee{% else %}onbekend{% endif
+        %}
+      </li>
+      <li>Monumentrelatie: {{ dossier.invoer.monumentrelatie }}</li>
+      <li>Gebiedsbescherming: {{ dossier.invoer.gebiedsbescherming }}</li>
+      <li>
+        Hoogte: {{ dossier.invoer.hoogte_m if dossier.invoer.hoogte_m is not
+        none else "onbekend" }}{% if dossier.invoer.hoogte_m is not none %} m{%
+        endif %}
+      </li>
+      <li>
+        Onderzijde boven dakvoet: {{ dossier.invoer.onderzijde_boven_dakvoet_m
+        if dossier.invoer.onderzijde_boven_dakvoet_m is not none else "onbekend"
+        }}{% if dossier.invoer.onderzijde_boven_dakvoet_m is not none %} m{%
+        endif %}
+      </li>
+      <li>
+        Bovenzijde onder daknok: {{ dossier.invoer.bovenzijde_onder_daknok_m if
+        dossier.invoer.bovenzijde_onder_daknok_m is not none else "onbekend"
+        }}{% if dossier.invoer.bovenzijde_onder_daknok_m is not none %} m{%
+        endif %}
+      </li>
+      <li>
+        Linkerzijkant tot dakvlakrand: {{
+        dossier.invoer.linker_zijkant_tot_dakvlakrand_m if
+        dossier.invoer.linker_zijkant_tot_dakvlakrand_m is not none else
+        "onbekend" }}{% if dossier.invoer.linker_zijkant_tot_dakvlakrand_m is
+        not none %} m{% endif %}
+      </li>
+      <li>
+        Rechterzijkant tot dakvlakrand: {{
+        dossier.invoer.rechter_zijkant_tot_dakvlakrand_m if
+        dossier.invoer.rechter_zijkant_tot_dakvlakrand_m is not none else
+        "onbekend" }}{% if dossier.invoer.rechter_zijkant_tot_dakvlakrand_m is
+        not none %} m{% endif %}
+      </li>
+    </ul>
+
+    <h2>Regeltoets</h2>
+    <p><strong>Eindoordeel:</strong> {{ dossier.toetsing.eindoordeel }}</p>
+    {% for eis in dossier.toetsing.eisen %}
+    <section class="item">
+      <h3>{{ eis.omschrijving }} — {{ eis.artikel }}</h3>
+      <p>
+        Uitkomst: {% if eis.voldaan is sameas true %}voldaan{% elif eis.voldaan
+        is sameas false %}niet voldaan{% else %}onbekend{% endif %}
+      </p>
+      {% if eis.toelichting %}
+      <p>{{ eis.toelichting }}</p>
+      {% endif %}
+      <blockquote>“{{ eis.citaat }}”</blockquote>
+      {% if eis.contextcitaat %}
+      <p class="muted">Context: “{{ eis.contextcitaat }}”</p>
+      {% endif %}
+      <p class="muted">Voorbehoud: {{ eis.voorbehoud }}</p>
+      <p class="muted">
+        {{ eis.bron.regeling }} · {{ eis.bron.bwb_id }} · geldig vanaf {{
+        eis.bron.toestand_geldig_vanaf }} · opgehaald {{ eis.bron.opgehaald_op
+        }}
+      </p>
+      <p>
+        <a href="{{ eis.bron.url }}"
+          >Bekijk {{ eis.artikel }} op wetten.overheid.nl</a
+        >
+      </p>
+    </section>
+    {% endfor %}
+    <h3>Technische bouwactiviteit apart</h3>
+    <p>
+      {{ dossier.toetsing.technische_bouwactiviteit.artikel }} · {{
+      dossier.toetsing.technische_bouwactiviteit.oordeel }}
+    </p>
+    <blockquote>
+      “{{ dossier.toetsing.technische_bouwactiviteit.citaat }}”
+    </blockquote>
+    <p class="muted">
+      Context: “{{ dossier.toetsing.technische_bouwactiviteit.contextcitaat }}”
+    </p>
+    <p class="muted">
+      Voorbehoud: {{ dossier.toetsing.technische_bouwactiviteit.voorbehoud }}
+    </p>
+    <p class="muted">Algemeen voorbehoud: {{ dossier.toetsing.voorbehoud }}</p>
+
+    <h2>Checklist van stukken</h2>
+    <p>
+      Status: {{ dossier.checklist.status }} · bron: {{ dossier.checklist.bron
+      }}
+    </p>
+    <p>{{ dossier.checklist.toelichting }}</p>
+    {% if dossier.checklist["items"] %}
+    <ul>
+      {% for item in dossier.checklist["items"] %}
+      <li>
+        {{ item.omschrijving }} ({{ item.status }}, bron: {{ item.bron }})
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <h2>Open vragen</h2>
+    {% if dossier.open_vragen %}
+    <ul>
+      {% for vraag in dossier.open_vragen %}
+      <li>{{ vraag }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>Geen open invoervragen.</p>
+    {% endif %}
+
+    <h2>Bronnen en herkomst</h2>
+    <p>Peildatum: {{ dossier.peildatum }}</p>
+    <ul>
+      {% for bron in dossier.bronnen %}
+      <li>
+        {{ bron.regeling }}, {{ bron.artikel }} · BWB-id {{ bron.bwb_id }} ·
+        geldig vanaf {{ bron.toestand_geldig_vanaf }} t/m {{
+        bron.toestand_geldig_tot }} · gewijzigd {{ bron.toestand_modified }} ·
+        opgehaald {{ bron.opgehaald_op }} · bestand {{ bron.bronbestand }} ·
+        SHA-256 {{ bron.sha256 }} · <a href="{{ bron.url }}">officiële tekst</a>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="disclosure">{{ dossier.disclosure }}</p>
+  </body>
+</html>
