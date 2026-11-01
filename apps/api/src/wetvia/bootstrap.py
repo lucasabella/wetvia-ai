@@ -1,11 +1,14 @@
 """Composition root. This is the only module that constructs ``Settings``."""
 
 import asyncio
+import ipaddress
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from threading import Lock
+from types import MappingProxyType
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 
@@ -25,6 +28,8 @@ from wetvia.llm.adapters.openai_compat import OpenAICompatProvider
 from wetvia.llm.ports import LLMProvider
 from wetvia.retrieval.adapters.pg import PgHybridRetriever
 from wetvia.retrieval.ports import Retriever
+
+SCALEWAY_API_BASE_URL = "https://api.scaleway.ai/v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,16 +73,99 @@ def package_version() -> str:
 
 
 def get_provider(settings: Settings) -> LLMProvider:
-    """Build the configured adapter. This is the only place that reads LLM settings."""
+    """Build one explicitly selected adapter for legacy consumers and tests."""
     if settings.llm_provider == "ollama":
+        if not _is_trusted_local_endpoint(settings.llm_base_url) or not settings.llm_model.strip():
+            raise RuntimeError("local LLM must use a trusted same-machine URL and model")
         return get_ollama_provider(base_url=settings.llm_base_url, model=settings.llm_model)
     if settings.llm_api_key is None or not settings.llm_api_key.get_secret_value().strip():
         raise RuntimeError("LLM_API_KEY is required when LLM_PROVIDER is openai_compat")
+    if (
+        not _is_scaleway_endpoint(settings.cloud_llm_base_url)
+        or not settings.cloud_llm_model.strip()
+    ):
+        raise RuntimeError("cloud mode requires the configured Scaleway EU endpoint and model")
     api_key = settings.llm_api_key.get_secret_value()
     return OpenAICompatProvider(
-        base_url=settings.llm_base_url,
-        model=settings.llm_model,
+        base_url=SCALEWAY_API_BASE_URL,
+        model=settings.cloud_llm_model,
         api_key=api_key,
+    )
+
+
+def get_chat_providers(settings: Settings) -> dict[ChatMode, LLMProvider]:
+    """Build the configured local/cloud adapters for per-request selection."""
+    providers: dict[ChatMode, LLMProvider] = {}
+    if _is_trusted_local_endpoint(settings.llm_base_url) and settings.llm_model.strip():
+        providers["local"] = get_ollama_provider(
+            base_url=settings.llm_base_url,
+            model=settings.llm_model,
+        )
+    cloud_key = (
+        settings.llm_api_key.get_secret_value().strip() if settings.llm_api_key is not None else ""
+    )
+    if (
+        cloud_key
+        and _is_scaleway_endpoint(settings.cloud_llm_base_url)
+        and settings.cloud_llm_model.strip()
+    ):
+        providers["cloud"] = OpenAICompatProvider(
+            base_url=SCALEWAY_API_BASE_URL,
+            model=settings.cloud_llm_model,
+            api_key=cloud_key,
+        )
+    return providers
+
+
+def _is_trusted_local_endpoint(value: str) -> bool:
+    """Accept only loopback Ollama endpoints and our Docker-to-host alias.
+
+    The selected mode is disclosed to users as local, so an arbitrary Ollama
+    compatible URL must never inherit that label. Docker Compose explicitly
+    maps ``host.docker.internal`` to the host gateway and offers ``ollama`` as
+    a service alias in its GPU profile.
+    """
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+        hostname = parsed.hostname
+    except ValueError:
+        return False
+    if (
+        parsed.scheme not in {"http", "https"}
+        or hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        return False
+    if port is not None and not 1 <= port <= 65535:
+        return False
+    normalized_host = hostname.rstrip(".").lower()
+    if normalized_host in {"host.docker.internal", "ollama"}:
+        return True
+    try:
+        return ipaddress.ip_address(normalized_host).is_loopback
+    except ValueError:
+        return normalized_host == "localhost"
+
+
+def _is_scaleway_endpoint(value: str) -> bool:
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "api.scaleway.ai"
+        and parsed.path.rstrip("/") == "/v1"
+        and port in {None, 443}
+        and parsed.username is None
+        and parsed.password is None
+        and not parsed.query
+        and not parsed.fragment
     )
 
 
@@ -132,33 +220,35 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     async def shutdown() -> None:
         await engine.dispose()
 
+    providers = get_chat_providers(loaded)
     context = HealthContext(
-        llm_provider=loaded.llm_provider,
         version=package_version(),
         check_db=check_db,
+        local_configured="local" in providers,
+        cloud_configured="cloud" in providers,
     )
     sessions = create_session_factory(engine)
     retriever = PgHybridRetriever(
         sessions,
         _LazyEmbedder(loaded.embedding_model, loaded.embedding_dimension),
     )
-    provider = get_provider(loaded)
-    answer_pipeline = AnswerPipeline(
-        retriever,
-        provider,
-        token_counter=Utf8ByteUpperBoundCounter(),
-        abstention_tau=loaded.answer_abstention_tau,
-    )
-    chat_mode: ChatMode = "local" if loaded.llm_provider == "ollama" else "cloud"
+    answer_pipelines = {
+        mode: AnswerPipeline(
+            retriever,
+            provider,
+            token_counter=Utf8ByteUpperBoundCounter(),
+            abstention_tau=loaded.answer_abstention_tau,
+        )
+        for mode, provider in providers.items()
+    }
     app = create_app(
         context,
         retriever=retriever,
-        answer_pipeline=answer_pipeline,
-        chat_mode=chat_mode,
+        answer_pipelines=answer_pipelines,
         shutdown=shutdown,
     )
     app.state.session_factory = sessions
-    app.state.llm = provider
+    app.state.llm_providers = MappingProxyType(dict(providers))
     return app
 
 

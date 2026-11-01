@@ -42,7 +42,7 @@
 ### 1. Startscherm (leeg gesprek)
 - Een korte uitleg in één zin: "Vraag naar regels voor verbouwen. Wetvia zoekt in officiële bronnen en laat zien waar het staat."
 - Drie **startkaarten**: "Dakkapel plaatsen" · "Uitbouw of aanbouw" · "Wat is een omgevingsplan?".
-- Modus-schakelaar **🔒 Lokaal / ☁ Cloud (EU)**. Bij het overschakelen naar Cloud verschijnt een modal: "Uw vraag en de gevonden bronnen worden verwerkt door Scaleway (Parijs). Geen uploads." De keuze wordt per gesprek onthouden.
+- Modus-schakelaar **🔒 Lokaal / ☁ Cloud (EU)**. Bij de eerste keuze voor Cloud in een gesprek verschijnt een modal: "Uw vraag en de gevonden bronnen worden verwerkt door Scaleway (Parijs). Geen uploads." Annuleren laat de modus ongewijzigd en verstuurt geen vraag. Na akkoord worden modus, toestemmingsversie en tijdstip per gesprek in IndexedDB opgeslagen vóór een cloudverzoek. Cloudverzoeken bevatten alleen de huidige vraag en de gevonden bronnen; eerdere beurten blijven lokaal.
 
 ### 2. Antwoord met onzekerheid
 - `status: onzeker` → een amberkleurige kaart: "Ik kan dit niet met zekerheid zeggen op basis van de bronnen die ik heb." Daaronder: wat Wetvia wél vond, plus waar het antwoord wél te vinden is (Omgevingsloket, gemeente, Juridisch Loket).

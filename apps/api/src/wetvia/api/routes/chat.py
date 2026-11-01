@@ -19,6 +19,7 @@ from wetvia.api.schemas.chat import (
     ChatDoneEvent,
     ChatErrorEvent,
     ChatEvent,
+    ChatMode,
     ChatRequest,
     ChatSourceCard,
     ChatSourcesEvent,
@@ -55,16 +56,23 @@ async def chat(
     request: ChatRequest,
     context: Annotated[ChatContext, Depends(get_chat_context)],
 ) -> StreamingResponse:
-    """Generate one answer; never switch providers based on request input."""
-    if request.mode is not None and request.mode != context.configured_mode:
+    """Select one configured pipeline for this request without provider fallback."""
+    mode: ChatMode = request.mode or "local"
+    answer_pipeline = context.answer_pipelines.get(mode)
+    if answer_pipeline is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Requested chat mode is unavailable.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Requested chat mode is not configured.",
         )
 
     current_message = request.messages[-1]
-    history = tuple(
-        ChatMessage(role=message.role, content=message.content) for message in request.messages[:-1]
+    history = (
+        ()
+        if mode == "cloud"
+        else tuple(
+            ChatMessage(role=message.role, content=message.content)
+            for message in request.messages[:-1]
+        )
     )
     peildatum = request.peildatum or date.today()
 
@@ -93,7 +101,7 @@ async def chat(
 
         async def generate_answer() -> None:
             try:
-                result = await context.answer_pipeline.answer(
+                result = await answer_pipeline.answer(
                     current_message.content,
                     peildatum,
                     history=history,

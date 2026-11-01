@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from wetvia.api.deps import HealthContext, get_health_context
-from wetvia.api.schemas.health import HealthResponse
+from wetvia.api.schemas.health import ConfiguredChatModes, HealthResponse
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -18,6 +18,10 @@ async def read_health(
     return HealthResponse(
         status="ok" if db_status == "ok" else "degraded",
         db=db_status,
-        llm_provider=context.llm_provider,
+        configured_chat_modes=ConfiguredChatModes(
+            local=context.local_configured,
+            cloud=context.cloud_configured,
+        ),
+        default_chat_mode="local",
         version=context.version,
     )

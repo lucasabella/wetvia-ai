@@ -6,7 +6,7 @@ Deze twee modules zijn bestanden, geen pakketten. Hogere lagen staan in de root-
 
 Doel: composition root. `build_app` is de enige plek die `Settings` (`wetvia.config`) aanmaakt. Het ASGI-object is `app` (lui).
 
-Publieke API: `build_app`, `open_retriever`, `RetrieverRuntime`, `get_provider`, `get_ollama_provider`, `package_version`, `app`. `open_retriever` composeert de publieke retrieval-port plus embeddingconfiguratie voor consumers zoals `eval` en beheert de database-engine via een async contextmanager. `get_provider` kiest de LLM-adapter uit `Settings`; `get_ollama_provider` maakt een expliciet geconfigureerde lokale Ollama-provider voor tools zoals `eval`. `build_app` zet de gekozen adapter op `app.state.llm`.
+Publieke API: `build_app`, `open_retriever`, `RetrieverRuntime`, `get_provider`, `get_chat_providers`, `get_ollama_provider`, `package_version`, `app`. `open_retriever` composeert de publieke retrieval-port plus embeddingconfiguratie voor consumers zoals `eval` en beheert de database-engine via een async contextmanager. `get_provider` bouwt een expliciet geselecteerde adapter voor bestaande consumers; `get_chat_providers` maakt de lokale en eventueel geconfigureerde Scaleway-provider. `build_app` injecteert aparte antwoordpipelines per modus; per request wordt er één gekozen en er is geen providerfallback.
 
 Toegestane imports: `wetvia.config` en alle lagere lagen (`wetvia.api`, `wetvia.cli`, `wetvia.answer`, `wetvia.dossier`, `wetvia.documents`, `wetvia.retrieval`, `wetvia.ingest`, `wetvia.citations`, `wetvia.rules`, `wetvia.llm`, `wetvia.embeddings`, `wetvia.db`, `wetvia.core`). Andere modules importeren `wetvia.config` niet.
 

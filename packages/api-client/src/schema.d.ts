@@ -15,7 +15,7 @@ export interface paths {
         put?: never;
         /**
          * Chat
-         * @description Generate one answer; never switch providers based on request input.
+         * @description Select one configured pipeline for this request without provider fallback.
          */
         post: operations["chat_api_chat_post"];
         delete?: never;
@@ -170,6 +170,16 @@ export interface components {
             type: "sources";
         };
         /**
+         * ConfiguredChatModes
+         * @description Configured providers; this does not assert that either endpoint responds.
+         */
+        ConfiguredChatModes: {
+            /** Cloud */
+            cloud: boolean;
+            /** Local */
+            local: boolean;
+        };
+        /**
          * FollowUpStep
          * @description A concrete next step with an HTTP(S) destination.
          */
@@ -189,16 +199,13 @@ export interface components {
         };
         /** HealthResponse */
         HealthResponse: {
+            configured_chat_modes: components["schemas"]["ConfiguredChatModes"];
             /**
              * Db
              * @enum {string}
              */
             db: "ok" | "error";
-            /**
-             * Llm Provider
-             * @enum {string}
-             */
-            llm_provider: "ollama" | "openai_compat";
+            default_chat_mode: components["schemas"]["ChatMode"];
             /**
              * Status
              * @enum {string}

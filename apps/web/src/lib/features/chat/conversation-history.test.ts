@@ -31,7 +31,7 @@ describe("ConversationHistoryStore", () => {
     );
   });
 
-  it("saves and restores a versioned backend-default conversation in IndexedDB", async () => {
+  it("saves and restores a versioned local conversation in IndexedDB", async () => {
     const name = databaseName(databaseNames);
     const repository = createRepository(name, repositories);
     const history = new ConversationHistoryStore(repository);
@@ -42,8 +42,10 @@ describe("ConversationHistoryStore", () => {
     );
 
     expect(result.persisted).toBe(true);
-    expect(result.conversation.schemaVersion).toBe(1);
-    expect(result.conversation.mode).toBe("backend-default");
+    expect(result.conversation.schemaVersion).toBe(2);
+    expect(result.conversation.mode).toBe("local");
+    expect(result.conversation.cloudConsentVersion).toBeNull();
+    expect(result.conversation.cloudConsentAt).toBeNull();
     expect(Array.from(result.conversation.title)).toHaveLength(60);
     expect(history.conversations[0]?.title).toBe(result.conversation.title);
 
@@ -54,12 +56,99 @@ describe("ConversationHistoryStore", () => {
     expect(summaries).toHaveLength(1);
     const record = await restored.load(result.conversation.id);
     expect(record).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: result.conversation.id,
       title: result.conversation.title,
-      mode: "backend-default",
+      mode: "local",
+      cloudConsentVersion: null,
+      cloudConsentAt: null,
       messages: [],
     });
+  });
+
+  it("migrates legacy modes and preserves cloud records without fresh consent", async () => {
+    const name = databaseName(databaseNames);
+    const legacyDatabase = new Dexie(name);
+    rawDatabases.push(legacyDatabase);
+    legacyDatabase.version(1).stores({
+      conversations: "id, mode, createdAt, updatedAt",
+    });
+    await legacyDatabase.open();
+    const createdAt = "2026-10-31T12:00:00.000Z";
+    const savedTurn = {
+      id: "turn-legacy",
+      question: "Synthetic saved question",
+      status: "answered",
+      sources: [syntheticSourceCard()],
+      answer: syntheticStoredAnswer(),
+      errorMessage: null,
+    };
+    const legacyRecord = (id: string, mode: string) => ({
+      schemaVersion: 1,
+      id,
+      title: `Synthetic ${mode} title`,
+      messages: [savedTurn],
+      mode,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const corruptRecord = {
+      ...legacyRecord("corrupt-v1", "local"),
+      title: 42,
+    };
+    const futureRecord = {
+      ...legacyRecord("future-schema", "cloud"),
+      schemaVersion: 4,
+      title: "Synthetic future version",
+    };
+    await legacyDatabase
+      .table("conversations")
+      .bulkPut([
+        legacyRecord("legacy-default", "backend-default"),
+        legacyRecord("legacy-local", "local"),
+        legacyRecord("legacy-cloud", "cloud"),
+        corruptRecord,
+        futureRecord,
+      ]);
+    legacyDatabase.close();
+
+    const repository = createRepository(name, repositories);
+    const listed = await repository.list();
+    expect(listed.skippedRecords).toBe(2);
+    expect(listed.conversations.map(({ id }) => id).sort()).toEqual([
+      "legacy-cloud",
+      "legacy-default",
+      "legacy-local",
+    ]);
+    for (const [id, mode] of [
+      ["legacy-default", "local"],
+      ["legacy-local", "local"],
+      ["legacy-cloud", "cloud"],
+    ] as const) {
+      const migrated = await repository.get(id);
+      expect(migrated).toMatchObject({
+        schemaVersion: 2,
+        mode,
+        cloudConsentVersion: null,
+        cloudConsentAt: null,
+        createdAt,
+        updatedAt: createdAt,
+        messages: [savedTurn],
+      });
+    }
+
+    const rawDatabase = new Dexie(name);
+    rawDatabases.push(rawDatabase);
+    rawDatabase.version(2).stores({
+      conversations: "id, mode, createdAt, updatedAt",
+    });
+    await rawDatabase.open();
+    expect(await rawDatabase.table("conversations").get("corrupt-v1")).toEqual(
+      corruptRecord,
+    );
+    expect(
+      await rawDatabase.table("conversations").get("future-schema"),
+    ).toEqual(futureRecord);
   });
 
   it("does not report failed IndexedDB writes as saved conversations", async () => {
@@ -115,7 +204,7 @@ describe("ConversationHistoryStore", () => {
 
     const corruptWriter = new Dexie(name);
     rawDatabases.push(corruptWriter);
-    corruptWriter.version(1).stores({
+    corruptWriter.version(2).stores({
       conversations: "id, mode, createdAt, updatedAt",
     });
     await corruptWriter.open();
@@ -171,16 +260,18 @@ describe("ConversationHistoryStore", () => {
 
       const rawDatabase = new Dexie(name);
       rawDatabases.push(rawDatabase);
-      rawDatabase.version(1).stores({
+      rawDatabase.version(2).stores({
         conversations: "id, mode, createdAt, updatedAt",
       });
       await rawDatabase.open();
       const corruptRow = {
-        schemaVersion: kind === "future-version" ? 2 : 1,
+        schemaVersion: kind === "future-version" ? 3 : 2,
         id,
         title: kind === "future-version" ? "Newer schema" : 42,
         messages: [],
-        mode: "backend-default",
+        mode: "local",
+        cloudConsentVersion: null,
+        cloudConsentAt: null,
         createdAt: "2026-10-31T12:00:00.000Z",
         updatedAt: "2026-10-31T12:00:00.000Z",
       };
@@ -305,10 +396,12 @@ describe("ConversationHistoryStore", () => {
   it("finishes hydration when clear invalidates a delayed history read", async () => {
     for (const failClear of [false, true]) {
       const preservedConversation: ConversationSummary = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         id: "preserved-conversation",
         title: "Synthetic conversation kept after failed clear",
-        mode: "backend-default",
+        mode: "local",
+        cloudConsentVersion: null,
+        cloudConsentAt: null,
         createdAt: "2026-10-31T12:00:00.000Z",
         updatedAt: "2026-10-31T12:00:00.000Z",
         messageCount: 1,
@@ -345,10 +438,12 @@ describe("ConversationHistoryStore", () => {
 describe("conversation date groups", () => {
   it("groups local calendar dates by today, Monday-based week, and older", () => {
     const summary = (id: string, createdAt: string): ConversationSummary => ({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id,
       title: id,
-      mode: "backend-default",
+      mode: "local",
+      cloudConsentVersion: null,
+      cloudConsentAt: null,
       createdAt,
       updatedAt: createdAt,
       messageCount: 1,
@@ -393,6 +488,42 @@ function createRepository(
   const repository = new DexieConversationRepository(name);
   repositories.push(repository);
   return repository;
+}
+
+function syntheticSourceCard() {
+  return {
+    label: "[1]",
+    chunk_id: "1d44e29c-b982-4f28-b789-c5cd24fa2de8",
+    tekst: "Synthetic saved source snapshot.",
+    score: 0.75,
+    metadata: {
+      bwb_id: "synthetic-saved-source",
+      regeling_titel: "Synthetic source title",
+      artikel: "Synthetic item",
+      kop_pad: "Synthetic source path",
+      bron_url: "https://example.test/synthetic-source",
+      toestand_url: "https://example.test/synthetic-state",
+      lid: null,
+      onderdeel: null,
+      opschrift: null,
+      geldig_vanaf: "2026-01-01",
+      geldig_tot: null,
+      status: "geldend",
+      artikel_status: "geldend",
+    },
+  };
+}
+
+function syntheticStoredAnswer() {
+  return {
+    status: "beantwoord",
+    samenvatting: "Synthetic persisted answer.",
+    punten: [],
+    voorbehouden: [],
+    vervolgstappen: [],
+    peildatum: "2026-10-31",
+    verifier_notes: [],
+  };
 }
 
 class FailingRepository implements ConversationRepository {

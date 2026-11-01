@@ -68,11 +68,16 @@ def _reply() -> str:
     )
 
 
-def _health_context() -> HealthContext:
+def _health_context(*, cloud_configured: bool = False) -> HealthContext:
     async def check_db() -> DbStatus:
         return "ok"
 
-    return HealthContext(llm_provider="ollama", version="0.0.0", check_db=check_db)
+    return HealthContext(
+        version="0.0.0",
+        check_db=check_db,
+        local_configured=True,
+        cloud_configured=cloud_configured,
+    )
 
 
 def _pipeline(
@@ -112,7 +117,7 @@ def test_chat_streams_in_order_with_only_included_sources_and_verified_notes(
 ) -> None:
     source = _source()
     pipeline, retriever, provider = _pipeline(source=source, replies=[_reply()])
-    app = create_app(_health_context(), answer_pipeline=pipeline)
+    app = create_app(_health_context(), answer_pipelines={"local": pipeline})
 
     response = _post(
         app,
@@ -144,7 +149,7 @@ def test_chat_streams_in_order_with_only_included_sources_and_verified_notes(
 
 def test_empty_retrieval_sends_empty_sources_then_deterministic_abstention() -> None:
     pipeline, retriever, provider = _pipeline()
-    app = create_app(_health_context(), answer_pipeline=pipeline)
+    app = create_app(_health_context(), answer_pipelines={"local": pipeline})
 
     response = _post(
         app,
@@ -167,7 +172,7 @@ def test_provider_error_after_sources_is_safe_and_ends_once() -> None:
     source = _source()
     retriever = FakeRetriever([ScoredChunk(source=source, score=0.5)])
     pipeline = AnswerPipeline(retriever, BrokenProvider())  # type: ignore[arg-type]
-    app = create_app(_health_context(), answer_pipeline=pipeline)
+    app = create_app(_health_context(), answer_pipelines={"local": pipeline})
 
     response = _post(
         app,
@@ -185,6 +190,44 @@ def test_provider_error_after_sources_is_safe_and_ends_once() -> None:
     assert not any(name == "answer" for name, _payload in parsed)
 
 
+def test_local_provider_failure_does_not_fall_back_to_cloud() -> None:
+    class BrokenLocalProvider:
+        calls = 0
+
+        async def chat(self, *_args: Any, **_kwargs: Any) -> Any:
+            self.calls += 1
+            raise RuntimeError("Synthetic local provider failure")
+
+    local_provider = BrokenLocalProvider()
+    local_pipeline = AnswerPipeline(
+        FakeRetriever([ScoredChunk(source=_source(), score=0.5)]),
+        local_provider,  # type: ignore[arg-type]
+    )
+    cloud_pipeline, _cloud_retriever, cloud_provider = _pipeline(
+        source=_source(), replies=[_reply()]
+    )
+    app = create_app(
+        _health_context(cloud_configured=True),
+        answer_pipelines={"local": local_pipeline, "cloud": cloud_pipeline},
+    )
+
+    response = _post(
+        app,
+        {
+            "messages": [{"role": "user", "content": "Synthetic local question?"}],
+            "peildatum": _DATE.isoformat(),
+        },
+    )
+
+    assert [name for name, _payload in _parse_sse(response)] == [
+        "sources",
+        "error",
+        "done",
+    ]
+    assert local_provider.calls == 1
+    assert cloud_provider.calls == []
+
+
 @pytest.mark.parametrize(
     "messages",
     [
@@ -197,7 +240,7 @@ def test_chat_rejects_system_final_assistant_and_oversized_current_message(
     messages: list[dict[str, str]],
 ) -> None:
     pipeline, _retriever, provider = _pipeline()
-    app = create_app(_health_context(), answer_pipeline=pipeline)
+    app = create_app(_health_context(), answer_pipelines={"local": pipeline})
 
     response = _post(app, {"messages": messages})
 
@@ -205,47 +248,81 @@ def test_chat_rejects_system_final_assistant_and_oversized_current_message(
     assert provider.calls == []
 
 
-def test_chat_rejects_mode_mismatch_before_streaming() -> None:
+def test_chat_rejects_unconfigured_cloud_before_streaming() -> None:
     pipeline, _retriever, provider = _pipeline()
-    app = create_app(_health_context(), answer_pipeline=pipeline, chat_mode="local")
+    app = create_app(_health_context(), answer_pipelines={"local": pipeline})
 
     response = _post(
         app,
         {"messages": [{"role": "user", "content": "Synthetic question?"}], "mode": "cloud"},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 503
     assert provider.calls == []
 
 
-def test_chat_accepts_the_configured_cloud_mode_without_switching_providers() -> None:
-    pipeline, _retriever, provider = _pipeline(source=_source(), replies=[_reply()])
-    context = _health_context()
-    cloud_context = HealthContext(
-        llm_provider="openai_compat",
-        version=context.version,
-        check_db=context.check_db,
+def test_chat_routes_local_default_and_cloud_to_separate_providers_concurrently() -> None:
+    local_pipeline, _local_retriever, local_provider = _pipeline(
+        source=_source(), replies=[_reply()]
     )
-    app = create_app(cloud_context, answer_pipeline=pipeline)
-
-    response = _post(
-        app,
-        {
-            "messages": [{"role": "user", "content": "Synthetic question?"}],
-            "mode": "cloud",
-            "peildatum": _DATE.isoformat(),
-        },
+    cloud_pipeline, _cloud_retriever, cloud_provider = _pipeline(
+        source=_source(), replies=[_reply()]
+    )
+    app = create_app(
+        _health_context(cloud_configured=True),
+        answer_pipelines={"local": local_pipeline, "cloud": cloud_pipeline},
     )
 
-    assert response.status_code == 200
-    assert [name for name, _payload in _parse_sse(response)] == ["sources", "answer", "done"]
-    assert len(provider.calls) == 1
+    async def exercise() -> tuple[httpx.Response, httpx.Response]:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            local, cloud = await asyncio.gather(
+                client.post(
+                    "/api/chat",
+                    json={
+                        "messages": [{"role": "user", "content": "Synthetic local?"}],
+                        "peildatum": _DATE.isoformat(),
+                    },
+                ),
+                client.post(
+                    "/api/chat",
+                    json={
+                        "messages": [
+                            {"role": "user", "content": "Synthetic prior cloud question?"},
+                            {"role": "assistant", "content": "Synthetic prior cloud answer."},
+                            {"role": "user", "content": "Synthetic cloud?"},
+                        ],
+                        "mode": "cloud",
+                        "peildatum": _DATE.isoformat(),
+                    },
+                ),
+            )
+        return local, cloud
+
+    local_response, cloud_response = asyncio.run(exercise())
+
+    assert local_response.status_code == cloud_response.status_code == 200
+    assert [name for name, _payload in _parse_sse(local_response)] == [
+        "sources",
+        "answer",
+        "done",
+    ]
+    assert [name for name, _payload in _parse_sse(cloud_response)] == [
+        "sources",
+        "answer",
+        "done",
+    ]
+    assert len(local_provider.calls) == len(cloud_provider.calls) == 1
+    assert "Synthetic local?" in local_provider.calls[0][0][-1]["content"]
+    assert "Synthetic cloud?" in cloud_provider.calls[0][0][-1]["content"]
+    cloud_prompt = "\n".join(message["content"] for message in cloud_provider.calls[0][0])
+    assert "Synthetic prior cloud" not in cloud_prompt
 
 
 def test_chat_passes_prior_history_to_provider_as_non_authoritative_context() -> None:
     source = _source()
     pipeline, _retriever, provider = _pipeline(source=source, replies=[_reply()])
-    app = create_app(_health_context(), answer_pipeline=pipeline)
+    app = create_app(_health_context(), answer_pipelines={"local": pipeline})
 
     response = _post(
         app,
@@ -340,7 +417,7 @@ def test_sources_frame_is_yielded_before_provider_starts_and_disconnect_cancels_
                 messages=[{"role": "user", "content": "Synthetic question?"}],
                 peildatum=_DATE,
             ),
-            ChatContext(answer_pipeline=pipeline, configured_mode="local"),
+            ChatContext(answer_pipelines={"local": pipeline}),
         )
         iterator = response.body_iterator
         source_frame = await anext(iterator)  # type: ignore[arg-type]

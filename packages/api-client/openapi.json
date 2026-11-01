@@ -242,6 +242,25 @@
         "title": "ChatSourcesEvent",
         "type": "object"
       },
+      "ConfiguredChatModes": {
+        "description": "Configured providers; this does not assert that either endpoint responds.",
+        "properties": {
+          "cloud": {
+            "title": "Cloud",
+            "type": "boolean"
+          },
+          "local": {
+            "title": "Local",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "local",
+          "cloud"
+        ],
+        "title": "ConfiguredChatModes",
+        "type": "object"
+      },
       "FollowUpStep": {
         "additionalProperties": false,
         "description": "A concrete next step with an HTTP(S) destination.",
@@ -280,6 +299,9 @@
       },
       "HealthResponse": {
         "properties": {
+          "configured_chat_modes": {
+            "$ref": "#/components/schemas/ConfiguredChatModes"
+          },
           "db": {
             "enum": [
               "ok",
@@ -288,13 +310,8 @@
             "title": "Db",
             "type": "string"
           },
-          "llm_provider": {
-            "enum": [
-              "ollama",
-              "openai_compat"
-            ],
-            "title": "Llm Provider",
-            "type": "string"
+          "default_chat_mode": {
+            "$ref": "#/components/schemas/ChatMode"
           },
           "status": {
             "enum": [
@@ -312,7 +329,8 @@
         "required": [
           "status",
           "db",
-          "llm_provider",
+          "configured_chat_modes",
+          "default_chat_mode",
           "version"
         ],
         "title": "HealthResponse",
@@ -599,7 +617,7 @@
   "paths": {
     "/api/chat": {
       "post": {
-        "description": "Generate one answer; never switch providers based on request input.",
+        "description": "Select one configured pipeline for this request without provider fallback.",
         "operationId": "chat_api_chat_post",
         "requestBody": {
           "content": {

@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import type { ChatEvent, components } from "@wetvia/api-client";
+import type { ChatEvent, ChatRequest, components } from "@wetvia/api-client";
 
 const chunkId = "1d44e29c-b982-4f28-b789-c5cd24fa2de8";
 const source = {
@@ -173,6 +173,134 @@ test("buiten_scope is neutral and does not turn into an answer", async ({
   await expectAxeClear(page);
 });
 
+test("cloud choice is disclosed, cancel-safe, per-conversation, and omits history", async ({
+  page,
+}) => {
+  const requests: ChatRequest[] = [];
+  const answer: components["schemas"]["VerifiedAnswer"] = {
+    status: "beantwoord",
+    samenvatting: "Synthetic answer for browser testing.",
+    punten: [
+      { tekst: "Synthetic cloud supported point.", bron_ids: [chunkId] },
+    ],
+    voorbehouden: [],
+    vervolgstappen: [],
+    peildatum: "2026-10-31",
+    verifier_notes: [],
+  };
+  const events: ChatEvent[] = [
+    { type: "sources", sources: [source] },
+    { type: "answer", answer },
+    { type: "done" },
+  ];
+  await page.route("**/api/chat", async (route) => {
+    requests.push(route.request().postDataJSON() as ChatRequest);
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream; charset=utf-8" },
+      body: events
+        .map(
+          (event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+        )
+        .join(""),
+    });
+  });
+  await openApp(page, { local: true, cloud: true });
+
+  const modeGroup = page.getByRole("group", { name: "Verwerkingsmodus" });
+  const localButton = modeGroup.getByRole("button", { name: /Lokaal/ });
+  const cloudButton = modeGroup.getByRole("button", { name: /Cloud \(EU\)/ });
+  await expect(localButton).toHaveAttribute("aria-pressed", "true");
+  await page
+    .getByRole("textbox", { name: "Stel een vraag" })
+    .fill("Synthetic local prior question?");
+  await page.getByRole("textbox", { name: "Stel een vraag" }).press("Enter");
+  await expect(
+    page.getByText("Synthetic answer for browser testing."),
+  ).toBeVisible();
+  expect(requests[0]).toMatchObject({
+    mode: "local",
+    messages: [{ role: "user", content: "Synthetic local prior question?" }],
+  });
+
+  await cloudButton.click();
+  const disclosure = page.getByRole("dialog", {
+    name: "Cloud (EU) gebruiken?",
+  });
+  await expect(disclosure).toBeVisible();
+  await expect(disclosure).toContainText(
+    "Uw vraag en de gevonden bronnen worden verwerkt door Scaleway (Parijs). Geen uploads.",
+  );
+  await expect(
+    disclosure.getByRole("button", { name: "Annuleren" }),
+  ).toBeFocused();
+  await expectAxeClear(page);
+  await disclosure.getByRole("button", { name: "Annuleren" }).click();
+  await expect(disclosure).toBeHidden();
+  await expect(localButton).toHaveAttribute("aria-pressed", "true");
+  await expect(cloudButton).toBeFocused();
+  expect(requests).toHaveLength(1);
+
+  await cloudButton.click();
+  await expect(
+    page.getByRole("dialog", { name: "Cloud (EU) gebruiken?" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "Cloud (EU) gebruiken?" }),
+  ).toBeHidden();
+  await expect(localButton).toHaveAttribute("aria-pressed", "true");
+  await expect(cloudButton).toBeFocused();
+  expect(requests).toHaveLength(1);
+
+  await cloudButton.click();
+  await page
+    .getByRole("dialog", { name: "Cloud (EU) gebruiken?" })
+    .getByRole("button", { name: "Akkoord en doorgaan" })
+    .click();
+  await expect(cloudButton).toHaveAttribute("aria-pressed", "true");
+
+  const persistedConsent = await readSavedConversation(page);
+  expect(persistedConsent).toMatchObject({
+    mode: "cloud",
+    cloudConsentVersion: 1,
+  });
+  expect(typeof persistedConsent?.cloudConsentAt).toBe("string");
+  expect(Date.parse(String(persistedConsent?.cloudConsentAt))).not.toBeNaN();
+
+  await page
+    .getByRole("textbox", { name: "Stel een vraag" })
+    .fill("Synthetic cloud follow-up question?");
+  await page.getByRole("textbox", { name: "Stel een vraag" }).press("Enter");
+  await expect(
+    page.getByText("Synthetic answer for browser testing."),
+  ).toHaveCount(2);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toMatchObject({
+    mode: "cloud",
+    messages: [
+      { role: "user", content: "Synthetic cloud follow-up question?" },
+    ],
+  });
+  await expectAxeClear(page);
+});
+
+test("a known unavailable local mode cannot submit while configured cloud remains selectable", async ({
+  page,
+}) => {
+  await openApp(page, { local: false, cloud: true });
+  const modeGroup = page.getByRole("group", { name: "Verwerkingsmodus" });
+  const localButton = modeGroup.getByRole("button", { name: /Lokaal/ });
+  const cloudButton = modeGroup.getByRole("button", { name: /Cloud \(EU\)/ });
+  await expect(localButton).toBeDisabled();
+  await expect(cloudButton).toBeEnabled();
+  await page
+    .getByRole("textbox", { name: "Stel een vraag" })
+    .fill("Synthetic mode availability check?");
+  await expect(page.getByRole("button", { name: "Verstuur" })).toBeDisabled();
+  await expectAxeClear(page);
+});
+
 test("loading and stream error states keep visible keyboard focus and pass axe", async ({
   page,
 }) => {
@@ -212,9 +340,9 @@ test("loading and stream error states keep visible keyboard focus and pass axe",
     .getByRole("textbox", { name: "Stel een vraag" })
     .fill("Synthetic question that will error?");
   await page.getByRole("textbox", { name: "Stel een vraag" }).press("Enter");
-  await expect(page.getByRole("status")).toContainText(
-    "Bronnen worden gezocht…",
-  );
+  await expect(
+    page.getByText("Bronnen worden gezocht…", { exact: true }),
+  ).toBeVisible();
   await expectAxeClear(page);
 
   releaseResponse();
@@ -429,11 +557,49 @@ async function mockChat(
   return () => requestCount;
 }
 
-async function openApp(page: import("@playwright/test").Page): Promise<void> {
+async function openApp(
+  page: import("@playwright/test").Page,
+  configuredModes = { local: true, cloud: false },
+): Promise<void> {
+  await page.route("**/api/health", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "ok",
+        db: "ok",
+        configured_chat_modes: configuredModes,
+        default_chat_mode: "local",
+        version: "browser-test",
+      }),
+    }),
+  );
   await page.goto("/");
   await expect(
     page.getByRole("form", { name: "Stel een vraag" }),
   ).toHaveAttribute("aria-busy", "false");
+}
+
+async function readSavedConversation(
+  page: import("@playwright/test").Page,
+): Promise<Record<string, unknown> | undefined> {
+  return page.evaluate(
+    () =>
+      new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
+        const request = indexedDB.open("wetvia-chat-history");
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("conversations", "readonly");
+          const records = transaction.objectStore("conversations").getAll();
+          records.onerror = () => reject(records.error);
+          records.onsuccess = () => {
+            resolve(records.result[0] as Record<string, unknown> | undefined);
+            database.close();
+          };
+        };
+      }),
+  );
 }
 
 async function openHistory(

@@ -2,6 +2,7 @@ import type { ChatTurn } from "./chat.svelte";
 import { SvelteDate, SvelteMap } from "svelte/reactivity";
 import {
   conversationTitle,
+  type CloudConsent,
   type ConversationMode,
   type ConversationRepository,
   type ConversationSummary,
@@ -78,17 +79,22 @@ export class ConversationHistoryStore {
 
   async create(
     firstQuestion: string,
-    mode: ConversationMode = "backend-default",
+    mode: ConversationMode = "local",
     messages: ChatTurn[] = [],
+    cloudConsent: CloudConsent = {
+      cloudConsentVersion: null,
+      cloudConsentAt: null,
+    },
   ): Promise<CreateConversationResult> {
     this.hydrationId += 1;
     const now = new SvelteDate().toISOString();
     const conversation: StoredConversation = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: crypto.randomUUID(),
       title: conversationTitle(firstQuestion),
       messages,
       mode,
+      ...cloudConsent,
       createdAt: now,
       updatedAt: now,
     };
@@ -137,6 +143,31 @@ export class ConversationHistoryStore {
       return false;
     }
     return renamed;
+  }
+
+  async updateMode(
+    id: string,
+    mode: ConversationMode,
+    cloudConsent?: CloudConsent,
+  ): Promise<boolean> {
+    try {
+      await this.enqueue(id, async () => {
+        const updated = await this.repository.update(
+          id,
+          cloudConsent
+            ? {
+                mode,
+                ...cloudConsent,
+                updatedAt: new SvelteDate().toISOString(),
+              }
+            : { mode, updatedAt: new SvelteDate().toISOString() },
+        );
+        this.upsertSummary(updated);
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async delete(id: string): Promise<void> {

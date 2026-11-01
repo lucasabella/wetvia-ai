@@ -20,6 +20,21 @@ class WetviaChatDatabase extends Dexie {
     this.version(1).stores({
       conversations: "id, mode, createdAt, updatedAt",
     });
+    this.version(2)
+      .stores({
+        conversations: "id, mode, createdAt, updatedAt",
+      })
+      .upgrade(async (transaction) => {
+        await transaction
+          .table("conversations")
+          .toCollection()
+          .modify((row: unknown) => {
+            const migrated = migrateLegacyConversation(row);
+            if (migrated && isRecord(row)) {
+              Object.assign(row, migrated);
+            }
+          });
+      });
   }
 }
 
@@ -92,6 +107,13 @@ export class DexieConversationRepository implements ConversationRepository {
         ...existing.conversation,
         ...("title" in patch ? { title: patch.title } : {}),
         ...("messages" in patch ? { messages: patch.messages } : {}),
+        ...("mode" in patch ? { mode: patch.mode } : {}),
+        ...("cloudConsentVersion" in patch
+          ? {
+              cloudConsentVersion: patch.cloudConsentVersion,
+              cloudConsentAt: patch.cloudConsentAt,
+            }
+          : {}),
         updatedAt: patch.updatedAt,
       };
       assertValidConversation(updated, id);
@@ -127,15 +149,18 @@ function parseConversation(value: unknown): ParsedConversation {
   if (!isRecord(value)) {
     return { kind: "corrupt" };
   }
-  if (typeof value.schemaVersion === "number" && value.schemaVersion > 1) {
+  if (typeof value.schemaVersion === "number" && value.schemaVersion > 2) {
     return { kind: "unsupported" };
   }
   if (
-    value.schemaVersion !== 1 ||
+    value.schemaVersion !== 2 ||
     typeof value.id !== "string" ||
     !value.id ||
     typeof value.title !== "string" ||
     !isConversationMode(value.mode) ||
+    !isNullablePositiveInteger(value.cloudConsentVersion) ||
+    !isNullableIsoTimestamp(value.cloudConsentAt) ||
+    (value.cloudConsentVersion === null) !== (value.cloudConsentAt === null) ||
     !isIsoTimestamp(value.createdAt) ||
     !isIsoTimestamp(value.updatedAt) ||
     !Array.isArray(value.messages) ||
@@ -147,6 +172,27 @@ function parseConversation(value: unknown): ParsedConversation {
     kind: "valid",
     conversation: value as unknown as StoredConversation,
   };
+}
+
+function migrateLegacyConversation(value: unknown): StoredConversation | null {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    (value.mode !== "backend-default" &&
+      value.mode !== "local" &&
+      value.mode !== "cloud")
+  ) {
+    return null;
+  }
+  const candidate = {
+    ...value,
+    schemaVersion: 2,
+    mode: value.mode === "cloud" ? "cloud" : "local",
+    cloudConsentVersion: null,
+    cloudConsentAt: null,
+  };
+  const parsed = parseConversation(candidate);
+  return parsed.kind === "valid" ? parsed.conversation : null;
 }
 
 function assertValidConversation(
@@ -243,7 +289,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isConversationMode(
   value: unknown,
 ): value is StoredConversation["mode"] {
-  return value === "local" || value === "cloud" || value === "backend-default";
+  return value === "local" || value === "cloud";
+}
+
+function isNullablePositiveInteger(value: unknown): value is number | null {
+  return (
+    value === null ||
+    (typeof value === "number" && Number.isInteger(value) && value > 0)
+  );
+}
+
+function isNullableIsoTimestamp(value: unknown): value is string | null {
+  return value === null || isIsoTimestamp(value);
 }
 
 function isLegalStatus(value: unknown): boolean {

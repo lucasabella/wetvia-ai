@@ -12,7 +12,7 @@ from wetvia.api.schemas.chat import (
     ChatSourceCard,
     ChatSourcesEvent,
 )
-from wetvia.api.schemas.health import HealthResponse
+from wetvia.api.schemas.health import ConfiguredChatModes, HealthResponse
 from wetvia.api.schemas.search import (
     ScoredChunkResponse,
     SearchResponse,
@@ -31,6 +31,7 @@ __all__ = [
     "ChatRole",
     "ChatSourceCard",
     "ChatSourcesEvent",
+    "ConfiguredChatModes",
     "HealthResponse",
     "ScoredChunkResponse",
     "SearchResponse",

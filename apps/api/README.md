@@ -90,12 +90,24 @@ counter for their generator tokenizer.
 
 ## SSE chat API
 
+`GET /api/health` reports whether local and cloud providers are configured and
+always identifies local as the default. This describes configuration only; it
+does not probe whether an inference endpoint is reachable. Cloud is configured
+only with the pinned Scaleway endpoint, a model name, and `LLM_API_KEY`.
+Local mode is configured only for loopback Ollama URLs or the exact Docker
+aliases `host.docker.internal` and `ollama` used by this repository's Compose
+setup. Other HTTP(S) hosts are not advertised or routed as local.
+
 `POST /api/chat` accepts `messages`, an optional `peildatum`, and an optional
 `mode` (`local` or `cloud`). Messages may have only `user` and `assistant`
 roles; the final message must be a user turn. A caller cannot provide a system
-message. The endpoint uses the provider configured by bootstrap. An explicit
-mode that differs from the configured provider returns HTTP 422; the request
-never switches providers.
+message. Bootstrap composes a separate immutable answer pipeline for each
+configured mode. An unconfigured requested mode returns HTTP 503 before SSE
+starts; requests never switch or fall back to another provider. Legacy
+`LLM_PROVIDER=openai_compat` settings move the former `LLM_BASE_URL` and
+`LLM_MODEL` values into cloud settings, then reset local settings to Ollama
+defaults. Remove `LLM_PROVIDER` after upgrading and use `CLOUD_LLM_*` for the
+documented Scaleway endpoint.
 
 The response is `text/event-stream`. It sends a `sources` event containing only
 the sources that fit in the prompt, with their actual `[1]`–`[8]` labels, before
@@ -111,8 +123,8 @@ total. If the newest turn is truncated, its tail is retained. Prior assistant
 messages are conversation context only; retrieved source chunks remain the
 only evidence for legal claims. Retrieval uses the current question plus recent
 prior user turns, bounded to 4,000 characters total; prior assistant messages
-are excluded from the retrieval query. The endpoint currently emits no `delta`
-events.
+are excluded from the retrieval query. The browser sends no prior turns in
+cloud mode. The endpoint currently emits no `delta` events.
 
 Lagen, van hoog naar laag: `bootstrap`, `api` | `cli`, `answer` | `dossier` | `documents`, `retrieval` | `ingest` | `citations` | `rules` | `llm`, `embeddings` | `db`, `core`. Elke module heeft een `AGENTS.md`.
 

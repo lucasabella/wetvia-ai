@@ -12,10 +12,32 @@
 
   let textarea = $state<HTMLTextAreaElement>();
   let transcript = $state<HTMLDivElement>();
+  let consentDialog = $state<HTMLDialogElement>();
+  let cloudConsentOpen = $state(false);
+  let submitAfterConsent = $state(false);
+  let consentConversationId = $state<string | null>(null);
+  let consentConversationGeneration = $state<number | null>(null);
+
+  $effect(() => {
+    const currentConversationId = chat.activeConversationId;
+    const currentGeneration = chat.conversationGeneration;
+    if (
+      cloudConsentOpen &&
+      (currentConversationId !== consentConversationId ||
+        currentGeneration !== consentConversationGeneration)
+    ) {
+      cancelCloudChoice();
+    }
+    if (cloudConsentOpen && consentDialog && !consentDialog.open) {
+      consentDialog.showModal();
+    } else if (!cloudConsentOpen && consentDialog?.open) {
+      consentDialog.close();
+    }
+  });
 
   function submit(event: SubmitEvent): void {
     event.preventDefault();
-    void chat.submit();
+    void submitQuestion();
   }
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -26,8 +48,78 @@
       !chat.sending
     ) {
       event.preventDefault();
-      void chat.submit();
+      void submitQuestion();
     }
+  }
+
+  async function submitQuestion(): Promise<void> {
+    if (chat.activeMode === "cloud" && chat.cloudAvailable !== true) {
+      await chat.submit();
+      return;
+    }
+    if (chat.activeMode === "cloud" && chat.requiresCloudConsent) {
+      if (chat.requestCloudConsent()) {
+        openCloudConsent(true);
+      }
+      return;
+    }
+    await chat.submit();
+  }
+
+  async function chooseMode(mode: "local" | "cloud"): Promise<void> {
+    const result = await chat.selectMode(mode);
+    if (result === "consent-required") {
+      openCloudConsent(false);
+    }
+  }
+
+  async function confirmCloudChoice(): Promise<void> {
+    if (!isConsentConversationCurrent()) {
+      cancelCloudChoice();
+      return;
+    }
+    const shouldSubmit = submitAfterConsent;
+    const confirmed = await chat.confirmCloudConsent();
+    if (!confirmed) {
+      return;
+    }
+    if (!isConsentConversationCurrent()) {
+      cancelCloudChoice();
+      return;
+    }
+    cloudConsentOpen = false;
+    chat.cancelCloudConsent();
+    clearConsentTarget();
+    if (shouldSubmit) {
+      await chat.submit();
+    }
+  }
+
+  function cancelCloudChoice(event?: Event): void {
+    event?.preventDefault();
+    cloudConsentOpen = false;
+    submitAfterConsent = false;
+    chat.cancelCloudConsent();
+    clearConsentTarget();
+  }
+
+  function openCloudConsent(shouldSubmit: boolean): void {
+    submitAfterConsent = shouldSubmit;
+    consentConversationId = chat.activeConversationId;
+    consentConversationGeneration = chat.conversationGeneration;
+    cloudConsentOpen = true;
+  }
+
+  function isConsentConversationCurrent(): boolean {
+    return (
+      chat.activeConversationId === consentConversationId &&
+      chat.conversationGeneration === consentConversationGeneration
+    );
+  }
+
+  function clearConsentTarget(): void {
+    consentConversationId = null;
+    consentConversationGeneration = null;
   }
 
   function useStarter(question: string): void {
@@ -60,7 +152,97 @@
     <p class="text-sm text-muted-foreground">
       Peildatum: {chat.peildatum.split("-").reverse().join("-")}
     </p>
+    <div class="flex basis-full flex-wrap items-center gap-2 sm:basis-auto">
+      <div
+        class="inline-flex rounded-md border border-border p-1"
+        role="group"
+        aria-label="Verwerkingsmodus"
+      >
+        <button
+          type="button"
+          class={`min-h-9 rounded px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${chat.activeMode === "local" ? "bg-accent font-semibold" : ""}`}
+          aria-pressed={chat.activeMode === "local"}
+          aria-describedby={chat.localAvailable === false
+            ? "local-status"
+            : undefined}
+          disabled={chat.localAvailable === false || chat.sending}
+          onclick={() => void chooseMode("local")}
+        >
+          🔒 Lokaal
+        </button>
+        <button
+          type="button"
+          class={`min-h-9 rounded px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50 ${chat.activeMode === "cloud" ? "bg-accent font-semibold" : ""}`}
+          aria-pressed={chat.activeMode === "cloud"}
+          aria-describedby={chat.cloudAvailable !== true
+            ? "cloud-status"
+            : undefined}
+          disabled={chat.cloudAvailable !== true || chat.sending}
+          onclick={() => void chooseMode("cloud")}
+        >
+          ☁ Cloud (EU)
+        </button>
+      </div>
+      {#if chat.localAvailable === false}
+        <span
+          id="local-status"
+          class="text-xs text-muted-foreground"
+          role="status"
+        >
+          Lokaal is niet geconfigureerd.
+        </span>
+      {/if}
+      {#if chat.cloudAvailable !== true}
+        <span
+          id="cloud-status"
+          class="text-xs text-muted-foreground"
+          role="status"
+        >
+          {chat.modeAvailabilityStatus === "loading"
+            ? "Beschikbaarheid van modi laden…"
+            : chat.modeAvailabilityStatus === "error"
+              ? "Beschikbaarheid van modi kon niet worden opgehaald."
+              : "Cloud (EU) is niet geconfigureerd."}
+        </span>
+      {/if}
+    </div>
   </header>
+
+  <dialog
+    bind:this={consentDialog}
+    aria-labelledby="cloud-consent-title"
+    aria-describedby="cloud-consent-copy"
+    oncancel={cancelCloudChoice}
+    class="w-[min(90vw,32rem)] rounded-xl border border-border bg-background p-0 text-foreground shadow-xl backdrop:bg-black/50"
+  >
+    <div class="space-y-5 p-5">
+      <div class="space-y-2">
+        <h2 id="cloud-consent-title" class="text-lg font-semibold">
+          Cloud (EU) gebruiken?
+        </h2>
+        <p id="cloud-consent-copy" class="text-sm leading-6">
+          Uw vraag en de gevonden bronnen worden verwerkt door Scaleway
+          (Parijs). Geen uploads.
+        </p>
+      </div>
+      <div class="flex flex-wrap justify-end gap-2">
+        <button
+          type="button"
+          class="min-h-10 rounded-md border border-border px-4 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          onclick={() => cancelCloudChoice()}
+        >
+          Annuleren
+        </button>
+        <button
+          type="button"
+          class="min-h-10 rounded-md bg-primary px-4 text-sm text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          onclick={() => void confirmCloudChoice()}
+        >
+          Akkoord en doorgaan
+        </button>
+      </div>
+    </div>
+  </dialog>
 
   {#if chat.turns.length === 0}
     <div
@@ -177,7 +359,11 @@
         <button
           type="submit"
           class="min-h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={!chat.ready || chat.sending || !chat.draft.trim()}
+          disabled={!chat.ready ||
+            chat.sending ||
+            !chat.draft.trim() ||
+            chat.activeModeAvailable === false ||
+            (chat.activeMode === "cloud" && chat.cloudAvailable !== true)}
         >
           Verstuur
         </button>
