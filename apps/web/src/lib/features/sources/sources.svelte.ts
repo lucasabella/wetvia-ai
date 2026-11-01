@@ -86,7 +86,7 @@ export function citationLabelFor(
   return sources.find((source) => source.chunk_id === chunkId)?.label;
 }
 
-/** Source cards belong to one in-memory chat turn; nothing is persisted. */
+/** Per-shell source selection; cards are restored from the active conversation. */
 export class SourcesStore {
   items = $state<ChatSourceCard[]>([]);
   activeTurnId = $state<string | null>(null);
@@ -96,6 +96,13 @@ export class SourcesStore {
   showTurn(turnId: string, items: ChatSourceCard[]): void {
     this.activeTurnId = turnId;
     this.items = items;
+    this.selectedChunkId = null;
+    this.selectionRevision += 1;
+  }
+
+  clear(): void {
+    this.activeTurnId = null;
+    this.items = [];
     this.selectedChunkId = null;
     this.selectionRevision += 1;
   }
