@@ -311,7 +311,12 @@ def toets(invoer: DakkapelInvoer) -> Toetsresultaat:
         _gebiedseis(invoer),
     )
 
-    if any(eis.voldaan is False for eis in eisen):
+    monument = next(eis for eis in eisen if eis.eis is EisCode.MONUMENT)
+    if monument.voldaan is None:
+        # Issue #21 requires an unknown monument relation to remain unresolved,
+        # even if another fact already fails the ordinary 2.29(b) conditions.
+        eindoordeel = Oordeel.ONBEPAALD
+    elif any(eis.voldaan is False for eis in eisen):
         eindoordeel = Oordeel.WAARSCHIJNLIJK_VERGUNNINGPLICHTIG
     elif any(eis.voldaan is None for eis in eisen):
         eindoordeel = Oordeel.ONBEPAALD

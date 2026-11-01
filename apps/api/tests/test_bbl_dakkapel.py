@@ -195,6 +195,33 @@ def test_monumentrelatie_houdt_in_aan_op_apart_van_bij(
         assert result.advies is not None and "Vraag na" in result.advies
 
 
+def test_onbekend_monument_blijft_onbepaald_bij_geometrische_afwijzing() -> None:
+    result = toets(
+        _geldige_invoer(
+            monumentrelatie=Monumentrelatie.ONBEKEND,
+            hoogte_m=Decimal("1.8"),
+        )
+    )
+
+    assert _eis(result.eisen, EisCode.HOOGTE).voldaan is False
+    assert _eis(result.eisen, EisCode.MONUMENT).voldaan is None
+    assert result.eindoordeel is Oordeel.ONBEPAALD
+    assert result.advies is not None and "Vraag na" in result.advies
+
+
+def test_bekend_monument_in_aan_op_beslist_bij_geometrische_afwijzing() -> None:
+    result = toets(
+        _geldige_invoer(
+            monumentrelatie=Monumentrelatie.IN_AAN_OP,
+            hoogte_m=Decimal("1.8"),
+        )
+    )
+
+    assert _eis(result.eisen, EisCode.HOOGTE).voldaan is False
+    assert _eis(result.eisen, EisCode.MONUMENT).voldaan is False
+    assert result.eindoordeel is Oordeel.WAARSCHIJNLIJK_VERGUNNINGPLICHTIG
+
+
 @pytest.mark.parametrize(
     ("gebied", "dakvlak", "naar_openbaar", "verwacht"),
     [
@@ -240,6 +267,19 @@ def test_rijksbeschermd_stads_of_dorpsgezicht(
         )
     )
     assert _eis(result.eisen, EisCode.GEBIEDSBESCHERMING).voldaan is verwacht
+
+
+def test_onbekend_beschermd_gebied_geeft_niet_onbepaald_bij_andere_zekere_afwijzing() -> None:
+    result = toets(
+        _geldige_invoer(
+            gebiedsbescherming=Gebiedsbescherming.ONBEKEND,
+            hoogte_m=Decimal("1.8"),
+        )
+    )
+
+    assert _eis(result.eisen, EisCode.GEBIEDSBESCHERMING).voldaan is None
+    assert _eis(result.eisen, EisCode.HOOGTE).voldaan is False
+    assert result.eindoordeel is Oordeel.WAARSCHIJNLIJK_VERGUNNINGPLICHTIG
 
 
 @pytest.mark.parametrize(
