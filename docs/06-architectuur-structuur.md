@@ -72,7 +72,7 @@ flowchart LR
   - `DsoClient`.
   
   `rules` en `citations` zijn **pure functies** zonder I/O. Die hebben geen port nodig.
-- **Composition root:** alleen `bootstrap.py` leest `Settings` en kiest de adapters. Lokaal versus cloud is één env-wissel (`LLM_PROVIDER`). Modules krijgen hun dependencies mee via de constructor of FastAPI-`Depends`. Ze lezen nooit zelf de env.
+- **Composition root:** alleen `bootstrap.py` leest `Settings` en maakt de lokale en optioneel geconfigureerde cloud-adapter. Een verzoek kiest expliciet één immutable pipeline; lokaal is de standaard en cloud valt nooit terug op lokaal of andersom. Modules krijgen hun dependencies mee via de constructor of FastAPI-`Depends`. Ze lezen nooit zelf de env.
 - **Publieke API per module:** wat in `__init__.py` staat, mag een andere module gebruiken. De rest (`_internal`, `adapters/`) niet.
 - **Data-eigenaarschap:** één schema, met tabellen per module in `db/schema/`. `ingest` schrijft `regeling/toestand/chunk`, `retrieval` leest ze alleen.
 - **`nl_wetten_ingest`** blijft een los, herbruikbaar pakket onder Apache-2.0. Het kent `wetvia` niet. Alle bron-clients (BWB, CVDR, TK, DSO) horen daar.

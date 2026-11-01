@@ -220,6 +220,21 @@ zodanig gemarkeerd en levert geen uitspraak over Wetvia-kwaliteit op.
 | Modus | LLM | Embeddings | Data verlaat machine? |
 |---|---|---|---|
 | **Lokaal** (standaard) | Ollama | lokaal (e5) | **Nee** (behalve publieke bron-API's, zonder gebruikersdata) |
-| **Cloud** (opt-in per gesprek) | Scaleway (EU) | lokaal (e5) | Ja: vraag + bronnen naar Scaleway. Melding in de UI + DPA |
+| **Cloud** (opt-in per gesprek) | Scaleway (Parijs, EU) | lokaal (e5) | Ja: alleen de huidige vraag + geselecteerde bronnen naar Scaleway. Melding in de UI + DPA |
+
+De API maakt de lokale Ollama-provider klaar wanneer de lokale URL en modelnaam
+zijn ingevuld. Cloud wordt alleen als geconfigureerd gemeld wanneer de
+Scaleway-endpoint `https://api.scaleway.ai/v1`, modelnaam en `LLM_API_KEY`
+allemaal aanwezig zijn. Een willekeurige OpenAI-compatibele URL bewijst geen
+EU-hosting en wordt voor deze cloudmodus niet gebruikt. `/api/health` meldt
+configuratie, geen bereikbaarheid van model-endpoints. Lokaal is de standaard;
+een expliciet gekozen maar niet geconfigureerde modus wordt vóór de SSE-stream
+geweigerd en wordt nooit naar de andere provider omgeleid.
+De UI haalt deze configuratie op via `/api/health`; een fout bij die controle
+wordt niet als bewijs voor beschikbaarheid of onbeschikbaarheid behandeld. De
+keuze en toestemmingsversie plus tijdstip worden per gesprek in de browser
+opgeslagen. Cloud stuurt geen eerdere gespreksbeurten mee. Oude gesprekken met
+`backend-default` worden lokaal gemigreerd; oude cloudgesprekken blijven cloud,
+maar vragen opnieuw toestemming voordat een cloudverzoek wordt verstuurd.
 
 Geüploade documenten (fase 2) worden **altijd lokaal** geparsed en geëmbed. In cloudmodus gaan alleen de geselecteerde passages mee, na automatische BSN-, e-mail- en telefoonnummer-redactie.

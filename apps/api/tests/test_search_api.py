@@ -45,7 +45,7 @@ def _app(retriever: FakeRetriever | None = None):
     async def check_db() -> DbStatus:
         return "ok"
 
-    context = HealthContext(llm_provider="ollama", version="0.0.0", check_db=check_db)
+    context = HealthContext(version="0.0.0", check_db=check_db)
     return create_app(context, retriever=retriever)
 
 

@@ -1,4 +1,5 @@
 import type { ChatEvent, ChatRequest, components } from "@wetvia/api-client";
+import { SvelteDate } from "svelte/reactivity";
 import type { SourcesStore, ChatSourceCard } from "../sources/sources.svelte";
 import { ConversationHistoryStore } from "./conversation-history.svelte";
 import type {
@@ -25,9 +26,12 @@ export type ChatStreamer = (
 ) => AsyncIterable<ChatEvent>;
 
 const MAX_HISTORY_TURNS = 19;
+export const CLOUD_CONSENT_VERSION = 1;
 const GENERIC_ERROR = "Er is iets misgegaan. Probeer het opnieuw.";
 const INTERRUPTED_ERROR =
   "Dit antwoord is onderbroken. Stel uw vraag opnieuw om verder te gaan.";
+const CLOUD_UNAVAILABLE = "Cloud (EU) is op dit moment niet geconfigureerd.";
+const CLOUD_CONSENT_REQUIRED = "Bevestig eerst de verwerking in Cloud (EU).";
 
 export function currentDateISO(now = Date.now()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -44,7 +48,7 @@ export function buildChatRequest(
   turns: ChatTurn[],
   question: string,
   peildatum: string,
-  mode: ConversationMode = "backend-default",
+  mode: ConversationMode = "local",
 ): ChatRequest {
   const history = (
     mode === "cloud" ? [] : turns.slice(-MAX_HISTORY_TURNS)
@@ -61,9 +65,7 @@ export function buildChatRequest(
     messages: [...history, { role: "user", content: question }],
     peildatum,
   };
-  if (mode !== "backend-default") {
-    request.mode = mode;
-  }
+  request.mode = mode;
   return request;
 }
 
@@ -75,7 +77,12 @@ export class ChatStore {
   peildatum = $state(currentDateISO());
   ready = $state(false);
   notice = $state<string | null>(null);
-  activeMode = $state<ConversationMode>("backend-default");
+  activeMode = $state<ConversationMode>("local");
+  localAvailable = $state<boolean | null>(null);
+  cloudAvailable = $state<boolean | null>(null);
+  modeAvailabilityStatus = $state<"loading" | "loaded" | "error">("loading");
+  cloudConsentVersion = $state<number | null>(null);
+  cloudConsentAt = $state<string | null>(null);
 
   private readonly stream: ChatStreamer;
   private readonly sources: SourcesStore;
@@ -96,6 +103,91 @@ export class ChatStore {
 
   get activeConversationId(): string | null {
     return this.history.activeId;
+  }
+
+  get activeModeAvailable(): boolean | null {
+    return this.activeMode === "local"
+      ? this.localAvailable
+      : this.cloudAvailable;
+  }
+
+  get hasCurrentCloudConsent(): boolean {
+    return (
+      this.cloudConsentVersion === CLOUD_CONSENT_VERSION &&
+      this.cloudConsentAt !== null
+    );
+  }
+
+  get requiresCloudConsent(): boolean {
+    return !this.hasCurrentCloudConsent;
+  }
+
+  setConfiguredChatModes(modes: { local: boolean; cloud: boolean }): void {
+    this.localAvailable = modes.local;
+    this.cloudAvailable = modes.cloud;
+    this.modeAvailabilityStatus = "loaded";
+  }
+
+  setModeAvailabilityError(): void {
+    this.localAvailable = null;
+    this.cloudAvailable = null;
+    this.modeAvailabilityStatus = "error";
+  }
+
+  async selectMode(
+    mode: ConversationMode,
+  ): Promise<"selected" | "consent-required" | "unavailable" | "save-failed"> {
+    if (mode === "local" && this.localAvailable === false) {
+      return "unavailable";
+    }
+    if (mode === "cloud") {
+      if (this.cloudAvailable !== true) {
+        return "unavailable";
+      }
+      if (!this.hasCurrentCloudConsent) {
+        return "consent-required";
+      }
+    }
+    if (this.activeConversationId) {
+      const saved = await this.history.updateMode(
+        this.activeConversationId,
+        mode,
+      );
+      if (!saved) {
+        this.notice = this.history.storageError;
+        return "save-failed";
+      }
+    }
+    this.activeMode = mode;
+    this.notice = null;
+    return "selected";
+  }
+
+  async confirmCloudConsent(): Promise<boolean> {
+    if (this.cloudAvailable !== true) {
+      this.notice = CLOUD_UNAVAILABLE;
+      return false;
+    }
+    const consent = {
+      cloudConsentVersion: CLOUD_CONSENT_VERSION,
+      cloudConsentAt: new SvelteDate().toISOString(),
+    };
+    if (
+      this.activeConversationId &&
+      !(await this.history.updateMode(
+        this.activeConversationId,
+        "cloud",
+        consent,
+      ))
+    ) {
+      this.notice = this.history.storageError;
+      return false;
+    }
+    this.activeMode = "cloud";
+    this.cloudConsentVersion = consent.cloudConsentVersion;
+    this.cloudConsentAt = consent.cloudConsentAt;
+    this.notice = null;
+    return true;
   }
 
   async hydrate(): Promise<void> {
@@ -142,7 +234,9 @@ export class ChatStore {
     this.invalidateActiveRequest();
     this.loadId += 1;
     this.history.setActive(null);
-    this.activeMode = "backend-default";
+    this.activeMode = "local";
+    this.cloudConsentVersion = null;
+    this.cloudConsentAt = null;
     this.turns = [];
     this.notice = null;
     this.sources.clear();
@@ -170,6 +264,23 @@ export class ChatStore {
     if (!question || this.sending || !this.ready) {
       return;
     }
+    if (this.activeMode === "local" && this.localAvailable === false) {
+      this.notice = "Lokaal is op dit moment niet geconfigureerd.";
+      return;
+    }
+    if (this.activeMode === "cloud" && this.cloudAvailable !== true) {
+      this.notice =
+        this.cloudAvailable === false
+          ? CLOUD_UNAVAILABLE
+          : this.modeAvailabilityStatus === "error"
+            ? "Beschikbaarheid van Cloud (EU) kon niet worden opgehaald."
+            : "Beschikbaarheid van Cloud (EU) wordt nog gecontroleerd.";
+      return;
+    }
+    if (this.activeMode === "cloud" && !this.hasCurrentCloudConsent) {
+      this.notice = CLOUD_CONSENT_REQUIRED;
+      return;
+    }
 
     this.sending = true;
     this.notice = null;
@@ -186,9 +297,15 @@ export class ChatStore {
     let conversationId = this.history.activeId;
     let createdConversation = false;
     if (!conversationId) {
-      const result = await this.history.create(question, "backend-default", [
-        turn,
-      ]);
+      const result = await this.history.create(
+        question,
+        this.activeMode,
+        [turn],
+        {
+          cloudConsentVersion: this.cloudConsentVersion,
+          cloudConsentAt: this.cloudConsentAt,
+        },
+      );
       const conversation = result.conversation;
       if (requestId !== this.requestId) {
         await this.history.delete(conversation.id);
@@ -196,10 +313,17 @@ export class ChatStore {
       }
       if (!result.persisted) {
         this.notice = this.history.storageError;
+        if (this.activeMode === "cloud") {
+          this.draft = question;
+          this.sending = false;
+          return;
+        }
       }
       conversationId = conversation.id;
       this.history.setActive(conversationId);
       this.activeMode = conversation.mode;
+      this.cloudConsentVersion = conversation.cloudConsentVersion;
+      this.cloudConsentAt = conversation.cloudConsentAt;
       createdConversation = true;
       this.turns.push(turn);
     } else {
@@ -300,6 +424,8 @@ export class ChatStore {
   private restore(conversation: StoredConversation): void {
     this.history.setActive(conversation.id);
     this.activeMode = conversation.mode;
+    this.cloudConsentVersion = conversation.cloudConsentVersion;
+    this.cloudConsentAt = conversation.cloudConsentAt;
     this.turns = conversation.messages.map((turn) =>
       turn.status === "pending"
         ? { ...turn, status: "error", errorMessage: INTERRUPTED_ERROR }

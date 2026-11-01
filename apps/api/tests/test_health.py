@@ -7,29 +7,33 @@ import pytest
 
 from wetvia.api import create_app
 from wetvia.api.deps import HealthContext
-from wetvia.core import LlmProvider
 from wetvia.db.engine import DbStatus
 
 
 def _context(
     *,
-    provider: LlmProvider = "ollama",
     version: str = "0.0.0",
     db_status: DbStatus = "ok",
+    cloud_configured: bool = False,
 ) -> HealthContext:
     async def check_db() -> DbStatus:
         return db_status
 
-    return HealthContext(llm_provider=provider, version=version, check_db=check_db)
+    return HealthContext(
+        version=version,
+        check_db=check_db,
+        local_configured=True,
+        cloud_configured=cloud_configured,
+    )
 
 
 def _get(
     path: str,
     *,
-    provider: LlmProvider = "openai_compat",
     version: str = "9.9.9",
+    cloud_configured: bool = True,
 ) -> httpx.Response:
-    app = create_app(_context(provider=provider, version=version))
+    app = create_app(_context(version=version, cloud_configured=cloud_configured))
     transport = httpx.ASGITransport(app=app)
 
     async def request() -> httpx.Response:
@@ -49,7 +53,8 @@ def test_health_reports_injected_values(monkeypatch: pytest.MonkeyPatch) -> None
     assert response.json() == {
         "status": "ok",
         "db": "ok",
-        "llm_provider": "openai_compat",
+        "configured_chat_modes": {"local": True, "cloud": True},
+        "default_chat_mode": "local",
         "version": "9.9.9",
     }
     assert "should-not-leak" not in response.text

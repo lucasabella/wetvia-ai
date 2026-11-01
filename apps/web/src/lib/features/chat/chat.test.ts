@@ -11,6 +11,7 @@ import type {
 } from "./conversation-repository";
 import {
   ChatStore,
+  CLOUD_CONSENT_VERSION,
   buildChatRequest,
   currentDateISO,
   formatAnswerDate,
@@ -95,8 +96,9 @@ describe("ChatStore", () => {
     await chat.submit("Synthetic persistent question?");
 
     const saved = await repository.get(chat.activeConversationId!);
-    expect(saved?.schemaVersion).toBe(1);
-    expect(saved?.mode).toBe("backend-default");
+    expect(saved?.schemaVersion).toBe(2);
+    expect(saved?.mode).toBe("local");
+    expect(saved?.cloudConsentVersion).toBeNull();
     expect(saved?.messages[0]?.answer?.verifier_notes).toEqual([]);
 
     const restoredSources = new SourcesStore();
@@ -116,6 +118,133 @@ describe("ChatStore", () => {
     expect(restoredSources.items).toEqual([sourceCard]);
     expect(restored.selectSource(restored.turns[0]!.id, chunkId)).toBe(true);
     expect(restoredSources.selectedChunkId).toBe(chunkId);
+  });
+
+  it("keeps local as the default and persists cloud consent before cloud generation", async () => {
+    const repository = new MemoryConversationRepository();
+    const history = new ConversationHistoryStore(repository);
+    const requests: ChatRequest[] = [];
+    let persistedBeforeGeneration: StoredConversation | undefined;
+    const chat = new ChatStore(
+      async function* (request): AsyncGenerator<ChatEvent> {
+        requests.push(request);
+        persistedBeforeGeneration = await repository.get(
+          chat.activeConversationId!,
+        );
+        yield { type: "sources", sources: [] };
+        yield { type: "answer", answer: syntheticAnswer([]) };
+        yield { type: "done" };
+      },
+      new SourcesStore(),
+      history,
+    );
+    chat.setConfiguredChatModes({ local: true, cloud: true });
+    await chat.hydrate();
+
+    expect(chat.activeMode).toBe("local");
+    expect(await chat.selectMode("cloud")).toBe("consent-required");
+    expect(chat.activeMode).toBe("local");
+    expect(await chat.confirmCloudConsent()).toBe(true);
+    expect(chat.activeMode).toBe("cloud");
+
+    await chat.submit("Synthetic question for cloud processing?");
+
+    expect(requests[0]?.mode).toBe("cloud");
+    expect(requests[0]?.messages).toEqual([
+      { role: "user", content: "Synthetic question for cloud processing?" },
+    ]);
+    expect(persistedBeforeGeneration).toMatchObject({
+      mode: "cloud",
+      cloudConsentVersion: CLOUD_CONSENT_VERSION,
+      messages: [
+        {
+          question: "Synthetic question for cloud processing?",
+          status: "pending",
+        },
+      ],
+    });
+    expect(
+      Date.parse(persistedBeforeGeneration!.cloudConsentAt!),
+    ).not.toBeNaN();
+  });
+
+  it("blocks cloud generation when the provider is unavailable or consent is stale", async () => {
+    let calls = 0;
+    const chat = await createChat(
+      async function* (): AsyncGenerator<ChatEvent> {
+        calls += 1;
+        yield { type: "done" };
+      },
+      new SourcesStore(),
+    );
+    chat.draft = "Synthetic privacy boundary question?";
+    chat.setConfiguredChatModes({ local: true, cloud: false });
+    expect(await chat.selectMode("cloud")).toBe("unavailable");
+    chat.activeMode = "cloud";
+    await chat.submit();
+    expect(calls).toBe(0);
+    expect(chat.draft).toBe("Synthetic privacy boundary question?");
+
+    chat.setConfiguredChatModes({ local: true, cloud: true });
+    await chat.submit();
+    expect(calls).toBe(0);
+    expect(chat.notice).toBe("Bevestig eerst de verwerking in Cloud (EU).");
+  });
+
+  it("requires renewed consent for a restored cloud conversation before sending", async () => {
+    const repository = new MemoryConversationRepository();
+    const legacyCloudConversation = {
+      ...syntheticConversation(
+        "legacy-cloud-conversation",
+        "Synthetic saved cloud question",
+        "2026-10-31T12:00:00.000Z",
+      ),
+      mode: "cloud" as const,
+    };
+    await repository.create(legacyCloudConversation);
+    let calls = 0;
+    const requests: ChatRequest[] = [];
+    const history = new ConversationHistoryStore(repository);
+    const chat = new ChatStore(
+      async function* (request): AsyncGenerator<ChatEvent> {
+        calls += 1;
+        requests.push(request);
+        yield { type: "sources", sources: [] };
+        yield { type: "answer", answer: syntheticAnswer([]) };
+        yield { type: "done" };
+      },
+      new SourcesStore(),
+      history,
+    );
+    chat.setConfiguredChatModes({ local: true, cloud: true });
+    await chat.hydrate();
+    chat.draft = "Synthetic restored cloud follow-up?";
+
+    expect(chat.activeMode).toBe("cloud");
+    expect(chat.requiresCloudConsent).toBe(true);
+    await chat.submit();
+    expect(calls).toBe(0);
+    expect(chat.draft).toBe("Synthetic restored cloud follow-up?");
+
+    expect(await chat.confirmCloudConsent()).toBe(true);
+    await chat.submit();
+    expect(calls).toBe(1);
+    expect(requests[0]?.mode).toBe("cloud");
+    expect(requests[0]?.messages).toEqual([
+      { role: "user", content: "Synthetic restored cloud follow-up?" },
+    ]);
+    expect(await repository.get("legacy-cloud-conversation")).toMatchObject({
+      mode: "cloud",
+      cloudConsentVersion: CLOUD_CONSENT_VERSION,
+    });
+  });
+
+  it("does not select a locally unavailable mode through the store API", async () => {
+    const chat = await createChat(emptyStream, new SourcesStore());
+    chat.setConfiguredChatModes({ local: false, cloud: true });
+
+    expect(await chat.selectMode("local")).toBe("unavailable");
+    expect(chat.activeMode).toBe("local");
   });
 
   it("stores the first question in the conversation's initial IndexedDB write", async () => {
@@ -173,7 +302,7 @@ describe("ChatStore", () => {
       "Synthetic answer for interface testing.",
       "Synthetic explicit follow-up?",
     ]);
-    expect(requests.every((request) => request.mode === undefined)).toBe(true);
+    expect(requests.every((request) => request.mode === "local")).toBe(true);
   });
 
   it("blocks submit while a selected conversation is still loading", async () => {
@@ -254,7 +383,7 @@ describe("ChatStore", () => {
     });
     expect(request.messages[0]?.content).toBe("Synthetic question 11");
     expect(request.peildatum).toBe("2026-10-31");
-    expect(request.mode).toBeUndefined();
+    expect(request.mode).toBe("local");
   });
 
   it("omits prior turns when a conversation is explicitly in cloud mode", () => {
@@ -456,10 +585,12 @@ function syntheticConversation(
   updatedAt: string,
 ): StoredConversation {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
     title: question,
-    mode: "backend-default",
+    mode: "local",
+    cloudConsentVersion: null,
+    cloudConsentAt: null,
     createdAt: updatedAt,
     updatedAt,
     messages: [

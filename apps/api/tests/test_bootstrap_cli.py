@@ -90,13 +90,13 @@ def test_run_cli_composes_ingest_dependencies_without_constructing_llm(
 
 
 @pytest.mark.parametrize(
-    ("provider", "mode"),
-    [("ollama", "local"), ("openai_compat", "cloud")],
+    ("api_key", "expected_modes"),
+    [(None, {"local"}), ("not-a-real-key", {"local", "cloud"})],
 )
-def test_build_app_injects_chat_mode_without_loading_embedding_model(
+def test_build_app_injects_configured_provider_pipelines_without_loading_embedding_model(
     monkeypatch: pytest.MonkeyPatch,
-    provider: str,
-    mode: str,
+    api_key: str | None,
+    expected_modes: set[str],
 ) -> None:
     class FakeEngine:
         async def dispose(self) -> None:
@@ -105,7 +105,16 @@ def test_build_app_injects_chat_mode_without_loading_embedding_model(
     engine = FakeEngine()
     monkeypatch.setattr(bootstrap, "create_db_engine", lambda _url: engine)
     monkeypatch.setattr(bootstrap, "create_session_factory", lambda _engine: object())
-    monkeypatch.setattr(bootstrap, "get_provider", lambda _settings: FakeProvider([]))
+    monkeypatch.setattr(
+        bootstrap,
+        "get_ollama_provider",
+        lambda **_kwargs: FakeProvider([]),
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "OpenAICompatProvider",
+        lambda **_kwargs: FakeProvider([]),
+    )
 
     def fail_if_model_loads(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("the embedding model must stay lazy during app construction")
@@ -114,10 +123,12 @@ def test_build_app_injects_chat_mode_without_loading_embedding_model(
     app = bootstrap.build_app(
         Settings(
             database_url="postgresql+psycopg://test@localhost/wetvia_test",
-            llm_provider=provider,  # type: ignore[arg-type]
+            llm_api_key=api_key,
         )
     )
 
-    assert app.state.answer_pipeline is not None
-    assert app.state.chat_mode == mode
+    assert set(app.state.answer_pipelines) == expected_modes
+    assert set(app.state.llm_providers) == expected_modes
     assert app.state.retriever is not None
+    with pytest.raises(TypeError):
+        app.state.answer_pipelines["cloud"] = app.state.answer_pipelines["local"]

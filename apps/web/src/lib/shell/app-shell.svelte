@@ -34,6 +34,29 @@
     void chat.hydrate();
   });
 
+  $effect(() => {
+    let current = true;
+    void apiClient
+      .GET("/api/health")
+      .then(({ data, error }) => {
+        if (current) {
+          if (data && !error) {
+            chat.setConfiguredChatModes(data.configured_chat_modes);
+          } else {
+            chat.setModeAvailabilityError();
+          }
+        }
+      })
+      .catch(() => {
+        if (current) {
+          chat.setModeAvailabilityError();
+        }
+      });
+    return () => {
+      current = false;
+    };
+  });
+
   function selectSource(turnId: string, chunkId: string): void {
     if (
       chat.selectSource(turnId, chunkId) &&

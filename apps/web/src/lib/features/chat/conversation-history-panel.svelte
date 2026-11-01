@@ -167,11 +167,7 @@
                   >
                     <span class="block truncate">{conversation.title}</span>
                     <span class="mt-0.5 block text-xs text-muted-foreground">
-                      {conversation.mode === "local"
-                        ? "Lokaal"
-                        : conversation.mode === "cloud"
-                          ? "Cloud"
-                          : "Backend bepaalt"}
+                      {conversation.mode === "local" ? "Lokaal" : "Cloud (EU)"}
                       · {conversation.messageCount}
                       {conversation.messageCount === 1 ? "vraag" : "vragen"}
                     </span>

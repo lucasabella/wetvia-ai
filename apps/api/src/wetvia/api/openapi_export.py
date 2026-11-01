@@ -17,7 +17,6 @@ async def _inert_database_check() -> DbStatus:
 def build_openapi_spec() -> dict[str, Any]:
     """Build the spec from an app factory and an inert health context."""
     context = HealthContext(
-        llm_provider="ollama",
         version="0.0.0",
         check_db=_inert_database_check,
     )

@@ -1,13 +1,20 @@
 import type { ChatTurn } from "./chat.svelte";
 
-export type ConversationMode = "local" | "cloud" | "backend-default";
+export type ConversationMode = "local" | "cloud";
+
+export type CloudConsent = {
+  cloudConsentVersion: number | null;
+  cloudConsentAt: string | null;
+};
 
 export type StoredConversation = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   title: string;
   messages: ChatTurn[];
   mode: ConversationMode;
+  cloudConsentVersion: number | null;
+  cloudConsentAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -23,7 +30,12 @@ export type ConversationListResult = {
 
 export type ConversationPatch =
   | Pick<StoredConversation, "title" | "updatedAt">
-  | Pick<StoredConversation, "messages" | "updatedAt">;
+  | Pick<StoredConversation, "messages" | "updatedAt">
+  | Pick<StoredConversation, "mode" | "updatedAt">
+  | Pick<
+      StoredConversation,
+      "mode" | "cloudConsentVersion" | "cloudConsentAt" | "updatedAt"
+    >;
 
 /** Browser-local storage boundary for conversations. No server adapter exists. */
 export interface ConversationRepository {

@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from wetvia.bootstrap import build_app
+from wetvia.bootstrap import build_app, get_chat_providers
 from wetvia.config import Settings
 from wetvia.core import LlmProvider
 
@@ -21,6 +21,8 @@ def _settings(
         llm_provider=llm_provider,
         llm_base_url="http://127.0.0.1:11434",
         llm_model="qwen3.5:9b",
+        cloud_llm_base_url="https://api.scaleway.ai/v1",
+        cloud_llm_model="qwen3.8-27b",
         embedding_model="intfloat/multilingual-e5-large-instruct",
         llm_api_key=llm_api_key,
     )
@@ -92,7 +94,13 @@ def test_build_app_uses_passed_settings_without_reading_a_new_provider(
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     app = build_app(_settings(llm_provider="openai_compat", llm_api_key="not-a-real-key"))
     context = app.state.health_context
-    assert context.llm_provider == "openai_compat"
+    assert context.local_configured is True
+    assert context.cloud_configured is True
+    assert set(app.state.llm_providers) == {"local", "cloud"}
+    assert set(app.state.answer_pipelines) == {"local", "cloud"}
+    assert app.state.answer_pipelines["local"]._provider is app.state.llm_providers["local"]
+    assert app.state.answer_pipelines["cloud"]._provider is app.state.llm_providers["cloud"]
+    assert app.state.answer_pipelines["local"] is not app.state.answer_pipelines["cloud"]
     assert "not-a-real-key" not in repr(app.state)
 
 
@@ -110,9 +118,72 @@ def test_build_app_injects_retriever_without_loading_embedding_model(
     assert app.state.retriever is not None
     assert app.state.retriever._embedder.model_id == "intfloat/multilingual-e5-large-instruct"
     assert app.state.retriever._embedder.dimension == 1024
-    assert app.state.answer_pipeline._retriever is app.state.retriever
-    assert app.state.answer_pipeline._provider is app.state.llm
-    assert app.state.answer_pipeline._abstention_tau == 0.01
+    assert app.state.answer_pipelines["local"]._retriever is app.state.retriever
+    assert app.state.answer_pipelines["local"]._provider is app.state.llm_providers["local"]
+    assert app.state.answer_pipelines["local"]._abstention_tau == 0.01
+
+
+def test_legacy_cloud_env_does_not_become_local_url_or_claim_scaleway() -> None:
+    legacy = Settings(
+        _env_file=None,
+        database_url="postgresql+psycopg://wetvia:change-me@127.0.0.1:5432/wetvia",
+        llm_provider="openai_compat",
+        llm_base_url="https://legacy.example.test/v1",
+        llm_model="legacy-model",
+        llm_api_key="not-a-real-key",
+    )
+
+    assert legacy.llm_base_url == "http://127.0.0.1:11434"
+    assert legacy.llm_model == "qwen3.5:9b"
+    assert legacy.cloud_llm_base_url == "https://legacy.example.test/v1"
+    assert legacy.cloud_llm_model == "legacy-model"
+    app = build_app(legacy)
+    assert app.state.health_context.local_configured is True
+    assert app.state.health_context.cloud_configured is False
+    assert set(app.state.answer_pipelines) == {"local"}
+
+
+def test_legacy_cloud_environment_variables_are_migrated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "openai_compat")
+    monkeypatch.setenv("LLM_BASE_URL", "https://legacy.example.test/v1")
+    monkeypatch.setenv("LLM_MODEL", "legacy-model")
+    monkeypatch.setenv("LLM_API_KEY", "not-a-real-key")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.llm_base_url == "http://127.0.0.1:11434"
+    assert settings.llm_model == "qwen3.5:9b"
+    assert settings.cloud_llm_base_url == "https://legacy.example.test/v1"
+    assert settings.cloud_llm_model == "legacy-model"
+
+
+def test_blank_provider_settings_are_not_reported_as_configured() -> None:
+    settings = Settings(
+        _env_file=None,
+        llm_base_url=" ",
+        llm_model="local-model",
+        cloud_llm_base_url="https://api.scaleway.ai/v1",
+        cloud_llm_model=" ",
+        llm_api_key=" ",
+    )
+
+    assert get_chat_providers(settings) == {}
+
+
+@pytest.mark.parametrize("api_key", [None, " "])
+def test_cloud_requires_a_nonblank_key_even_with_the_pinned_endpoint(
+    api_key: str | None,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        cloud_llm_base_url="https://api.scaleway.ai/v1",
+        cloud_llm_model="configured-model",
+        llm_api_key=api_key,
+    )
+
+    assert set(get_chat_providers(settings)) == {"local"}
 
 
 def test_open_retriever_exposes_public_runtime_and_closes_engine(

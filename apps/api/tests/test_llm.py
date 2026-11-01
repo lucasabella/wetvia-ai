@@ -51,8 +51,10 @@ def _settings(provider: LlmProvider, *, api_key: str | None = None) -> Settings:
         _env_file=None,
         database_url="postgresql+psycopg://wetvia:change-me@127.0.0.1:5432/wetvia",
         llm_provider=provider,
-        llm_base_url="http://llm.test/v1" if provider == "openai_compat" else "http://ollama.test",
+        llm_base_url="http://ollama.test",
         llm_model="dummy-model",
+        cloud_llm_base_url="https://api.scaleway.ai/v1",
+        cloud_llm_model="dummy-model",
         embedding_model="intfloat/multilingual-e5-large-instruct",
         llm_api_key=api_key,
     )

@@ -1,7 +1,8 @@
 """FastAPI app factory. Callers pass a ``HealthContext``; this module does not read settings."""
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
+from types import MappingProxyType
 from typing import Any
 
 from fastapi import FastAPI
@@ -26,8 +27,7 @@ def create_app(
     context: HealthContext,
     *,
     retriever: Retriever | None = None,
-    answer_pipeline: AnswerPipeline | None = None,
-    chat_mode: ChatMode | None = None,
+    answer_pipelines: Mapping[ChatMode, AnswerPipeline] | None = None,
     shutdown: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -46,8 +46,7 @@ def create_app(
     )
     app.state.health_context = context
     app.state.retriever = retriever
-    app.state.answer_pipeline = answer_pipeline
-    app.state.chat_mode = chat_mode or ("local" if context.llm_provider == "ollama" else "cloud")
+    app.state.answer_pipelines = MappingProxyType(dict(answer_pipelines or {}))
     app.include_router(health_router)
     app.include_router(search_router)
     app.include_router(chat_router)
