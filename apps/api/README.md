@@ -39,6 +39,13 @@ the listed Bbl conditions, not a complete permit decision: local plan rules
 and the severe-appearance caveat still apply. The result links to the official
 [Vergunningcheck](https://omgevingswet.overheid.nl/checken).
 
+`POST /api/rules/dakkapel` is the thin HTTP wrapper around that same public
+function. Its measurement values are canonical decimal strings or `null` (for
+example, `"1.75"`); it rejects JSON numbers, comma decimals and non-canonical
+forms. The generated `@wetvia/api-client` carries the request and response
+types. The route maps input to `DakkapelInvoer` and does not duplicate the
+legal thresholds.
+
 The stored vector defaults to 1024 dimensions, matching the initial
 `Vector(1024)` migration. The database records the active model ID and dimension,
 and the job refuses to mix vector spaces. To switch models at the same

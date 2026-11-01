@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rules/dakkapel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Dakkapel
+         * @description Map validated HTTP input to the public pure rules API.
+         */
+        post: operations["check_dakkapel_api_rules_dakkapel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search": {
         parameters: {
             query?: never;
@@ -79,6 +99,23 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActiviteitResultaatResponse */
+        ActiviteitResultaatResponse: {
+            /** Activiteit */
+            activiteit: string;
+            /** Artikel */
+            artikel: string;
+            bron: components["schemas"]["BronverwijzingResponse"];
+            /** Citaat */
+            citaat: string;
+            /** Contextcitaat */
+            contextcitaat: string;
+            oordeel: components["schemas"]["Oordeel"];
+            /** Vergunningcheck Url */
+            vergunningcheck_url: string;
+            /** Voorbehoud */
+            voorbehoud: string;
+        };
         /**
          * AnswerPoint
          * @description One answer claim with the retrieved source chunks that support it.
@@ -88,6 +125,43 @@ export interface components {
             bron_ids: string[];
             /** Tekst */
             tekst: string;
+        };
+        /** BronverwijzingResponse */
+        BronverwijzingResponse: {
+            /** Artikel */
+            artikel: string;
+            /** Bron Url */
+            bron_url: string;
+            /** Bronbestand */
+            bronbestand: string;
+            /** Bwb Id */
+            bwb_id: string;
+            /**
+             * Opgehaald Op
+             * Format: date
+             */
+            opgehaald_op: string;
+            /** Regeling */
+            regeling: string;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Toestand Geldig Tot
+             * Format: date
+             */
+            toestand_geldig_tot: string;
+            /**
+             * Toestand Geldig Vanaf
+             * Format: date
+             */
+            toestand_geldig_vanaf: string;
+            /**
+             * Toestand Modified
+             * Format: date
+             */
+            toestand_modified: string;
+            /** Url */
+            url: string;
         };
         /** ChatAnswerEvent */
         ChatAnswerEvent: {
@@ -180,6 +254,77 @@ export interface components {
             local: boolean;
         };
         /**
+         * DakkapelRuleRequest
+         * @description Complete input for one Bbl dakkapel check.
+         *
+         *     Measurements are canonical, non-negative decimal strings. The browser may
+         *     accept a localized comma, but sends the normalized dot-decimal form here.
+         */
+        DakkapelRuleRequest: {
+            /** Bovenzijde Onder Daknok M */
+            bovenzijde_onder_daknok_m: string | null;
+            dakvlak: components["schemas"]["Dakvlak"];
+            /** Dakvlak Naar Openbaar Toegankelijk Gebied */
+            dakvlak_naar_openbaar_toegankelijk_gebied: boolean | null;
+            gebiedsbescherming: components["schemas"]["Gebiedsbescherming"];
+            /** Hoogte M */
+            hoogte_m: string | null;
+            /** Linker Zijkant Tot Dakvlakrand M */
+            linker_zijkant_tot_dakvlakrand_m: string | null;
+            monumentrelatie: components["schemas"]["Monumentrelatie"];
+            /** Onderzijde Boven Dakvoet M */
+            onderzijde_boven_dakvoet_m: string | null;
+            /** Plat Dak */
+            plat_dak: boolean | null;
+            /** Rechter Zijkant Tot Dakvlakrand M */
+            rechter_zijkant_tot_dakvlakrand_m: string | null;
+        };
+        /** DakkapelRuleResponse */
+        DakkapelRuleResponse: {
+            /** Advies */
+            advies: string | null;
+            eindoordeel: components["schemas"]["Oordeel"];
+            /** Eisen */
+            eisen: components["schemas"]["EisResultaatResponse"][];
+            technische_bouwactiviteit: components["schemas"]["ActiviteitResultaatResponse"];
+            /** Vergunningcheck Url */
+            vergunningcheck_url: string;
+            /** Voorbehoud */
+            voorbehoud: string;
+        };
+        /**
+         * Dakvlak
+         * @description Roof face where the dakkapel is placed.
+         * @enum {string}
+         */
+        Dakvlak: "achterdakvlak" | "zijdakvlak" | "ander_dakvlak" | "onbekend";
+        /**
+         * EisCode
+         * @enum {string}
+         */
+        EisCode: "locatie" | "plat_dak" | "hoogte" | "onderzijde" | "bovenzijde" | "linker_zijkant" | "rechter_zijkant" | "monument" | "gebiedsbescherming";
+        /** EisResultaatResponse */
+        EisResultaatResponse: {
+            /** Artikel */
+            artikel: string;
+            bron: components["schemas"]["BronverwijzingResponse"];
+            /** Citaat */
+            citaat: string;
+            /** Contextcitaat */
+            contextcitaat: string | null;
+            eis: components["schemas"]["EisCode"];
+            /** Omschrijving */
+            omschrijving: string;
+            /** Toelichting */
+            toelichting: string | null;
+            /** Vergunningcheck Url */
+            vergunningcheck_url: string;
+            /** Voldaan */
+            voldaan: boolean | null;
+            /** Voorbehoud */
+            voorbehoud: string;
+        };
+        /**
          * FollowUpStep
          * @description A concrete next step with an HTTP(S) destination.
          */
@@ -192,6 +337,11 @@ export interface components {
              */
             url: string;
         };
+        /**
+         * Gebiedsbescherming
+         * @enum {string}
+         */
+        Gebiedsbescherming: "geen_rijksbeschermd_stads_of_dorpsgezicht" | "rijksbeschermd_stads_of_dorpsgezicht" | "onbekend";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -214,6 +364,17 @@ export interface components {
             /** Version */
             version: string;
         };
+        /**
+         * Monumentrelatie
+         * @description Relation of the work to any protected monument type named in Bbl 2.30.
+         * @enum {string}
+         */
+        Monumentrelatie: "geen_monument" | "in_aan_of_op_monument" | "bij_monument" | "onbekend";
+        /**
+         * Oordeel
+         * @enum {string}
+         */
+        Oordeel: "waarschijnlijk_vergunningvrij" | "waarschijnlijk_vergunningplichtig" | "onbepaald";
         /** ScoredChunkResponse */
         ScoredChunkResponse: {
             /** Score */
@@ -371,6 +532,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    check_dakkapel_api_rules_dakkapel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DakkapelRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DakkapelRuleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

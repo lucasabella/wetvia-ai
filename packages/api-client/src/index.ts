@@ -6,6 +6,9 @@ export type { components, operations, paths } from "./schema.js";
 
 export type ChatEvent = components["schemas"]["ChatEvent"];
 export type ChatRequest = components["schemas"]["ChatRequest"];
+export type DakkapelRuleRequest = components["schemas"]["DakkapelRuleRequest"];
+export type DakkapelRuleResponse =
+  components["schemas"]["DakkapelRuleResponse"];
 
 export type WetviaClientOptions = {
   baseUrl: string;
