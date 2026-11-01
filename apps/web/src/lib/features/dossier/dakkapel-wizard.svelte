@@ -149,12 +149,17 @@
     );
   }
 
-  function sketchDimension(field: MeasurementField, fallback: number): number {
+  function sketchDimension(
+    field: MeasurementField,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+  ): number {
     const parsed = parseMeterInput(wizard.rawMeasurements[field]);
     if (!parsed.valid || parsed.value === null) return fallback;
     const numeric = Number(parsed.value);
     if (!Number.isFinite(numeric)) return fallback;
-    return Math.max(16, Math.min(72, numeric * 22));
+    return Math.max(minimum, Math.min(maximum, numeric * 22));
   }
 
   function next(): void {
@@ -175,13 +180,22 @@
     });
   }
 
-  const diagramHeight = $derived(sketchDimension("hoogte_m", 38));
+  const diagramHeight = $derived(sketchDimension("hoogte_m", 58, 18, 64));
+  const diagramUnderside = $derived(
+    sketchDimension("onderzijde_boven_dakvoet_m", 30, 10, 36),
+  );
+  const diagramTopGap = $derived(
+    sketchDimension("bovenzijde_onder_daknok_m", 38, 10, 36),
+  );
   const diagramLeft = $derived(
-    sketchDimension("linker_zijkant_tot_dakvlakrand_m", 34),
+    sketchDimension("linker_zijkant_tot_dakvlakrand_m", 34, 16, 44),
   );
   const diagramRight = $derived(
-    sketchDimension("rechter_zijkant_tot_dakvlakrand_m", 34),
+    sketchDimension("rechter_zijkant_tot_dakvlakrand_m", 34, 16, 44),
   );
+  const diagramBottom = $derived(158 - diagramUnderside);
+  const diagramTop = $derived(diagramBottom - diagramHeight);
+  const diagramRoofPeak = $derived(diagramTop - diagramTopGap);
   const flatRoof = $derived(requirement("plat_dak"));
 </script>
 
@@ -438,7 +452,8 @@
             >Schematische dakkapel met maatlijnen</title
           >
           <path
-            d="M30 158 160 42 290 158"
+            data-testid="dak-schets"
+            d={`M30 158 160 ${diagramRoofPeak} 290 158`}
             fill="none"
             stroke="currentColor"
             stroke-width="5"
@@ -452,8 +467,9 @@
             stroke-width="2"
           />
           <rect
+            data-testid="dakkapel-schets"
             x={160 - diagramLeft - 54}
-            y={158 - diagramHeight}
+            y={diagramTop}
             width={Math.max(35, 108 - diagramLeft - diagramRight)}
             height={diagramHeight}
             rx="3"
@@ -464,21 +480,36 @@
           />
           <line
             x1="160"
-            y1={158 - diagramHeight}
+            y1={diagramTop}
             x2="160"
-            y2="158"
+            y2={diagramBottom}
             stroke="currentColor"
             stroke-dasharray="4 3"
           />
           <line
-            x1="160"
-            y1="42"
-            x2="160"
-            y2={158 - diagramHeight}
+            data-testid="nokafstand-schets"
+            x1="207"
+            y1={diagramRoofPeak}
+            x2="207"
+            y2={diagramTop}
             stroke="currentColor"
             stroke-dasharray="4 3"
           />
-          <text x="171" y="111" font-size="12" fill="currentColor">hoogte</text>
+          <line
+            data-testid="dakvoetafstand-schets"
+            x1="118"
+            y1={diagramBottom}
+            x2="118"
+            y2="158"
+            stroke="currentColor"
+            stroke-dasharray="4 3"
+          />
+          <text
+            x="171"
+            y={(diagramTop + diagramBottom) / 2}
+            font-size="12"
+            fill="currentColor">hoogte</text
+          >
           <text x="12" y="176" font-size="10" fill="currentColor">dakvoet</text>
           <text x="142" y="31" font-size="10" fill="currentColor">nok</text>
         </svg>

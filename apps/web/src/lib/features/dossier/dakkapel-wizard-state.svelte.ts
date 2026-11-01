@@ -123,7 +123,15 @@ export class DakkapelWizardStore {
   }
 
   setInput(patch: Partial<DakkapelRuleRequest>): void {
-    this.input = { ...this.input, ...patch };
+    const roofFaceChanged =
+      patch.dakvlak !== undefined && patch.dakvlak !== this.input.dakvlak;
+    this.input = {
+      ...this.input,
+      ...patch,
+      ...(roofFaceChanged
+        ? { dakvlak_naar_openbaar_toegankelijk_gebied: null }
+        : {}),
+    };
     this.scheduleCheck();
   }
 

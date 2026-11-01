@@ -137,6 +137,30 @@ test("protected rear roof asks and sends its public-area orientation", async ({
   });
 });
 
+test("the measurement sketch reflects the height, underside and top distances", async ({
+  page,
+}) => {
+  await openDakkapelWizard(page);
+  await page.getByRole("button", { name: "Volgende: Dakvlak" }).click();
+  await page.getByRole("button", { name: "Volgende: Maten" }).click();
+
+  const diagram = page.getByTestId("dakkapel-schets");
+  const roof = page.getByTestId("dak-schets");
+  const initialY = await diagram.getAttribute("y");
+  const initialHeight = await diagram.getAttribute("height");
+  const initialRoof = await roof.getAttribute("d");
+
+  await page.getByLabel("Onderzijde boven de dakvoet (m)").fill("0,5");
+  await expect(diagram).not.toHaveAttribute("y", initialY!);
+  await page.getByLabel("Hoogte vanaf de voet (m)").fill("1,2");
+  await expect(diagram).not.toHaveAttribute("height", initialHeight!);
+  const roofAfterHeight = await roof.getAttribute("d");
+  await page.getByLabel("Bovenzijde onder de daknok (m)").fill("0,5");
+  await expect(roof).not.toHaveAttribute("d", roofAfterHeight!);
+  expect(await roof.getAttribute("d")).not.toBe(initialRoof);
+  await expectAxeClear(page);
+});
+
 test("unknown monument answer stays onbepaald and prompts the user to check", async ({
   page,
 }) => {

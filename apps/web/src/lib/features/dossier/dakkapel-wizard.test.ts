@@ -118,6 +118,24 @@ describe("DakkapelWizardStore", () => {
     expect(wizard.step).toBe(3);
     wizard.dispose();
   });
+
+  it("clears the public-area answer when switching between roof faces", () => {
+    const checker: RuleChecker = async () => fakeResult("fresh");
+    const wizard = new DakkapelWizardStore(checker, 100);
+
+    wizard.setInput({
+      dakvlak: "zijdakvlak",
+      gebiedsbescherming: "rijksbeschermd_stads_of_dorpsgezicht",
+    });
+    wizard.setInput({ dakvlak_naar_openbaar_toegankelijk_gebied: false });
+    wizard.setInput({ dakvlak: "achterdakvlak" });
+    expect(wizard.input.dakvlak_naar_openbaar_toegankelijk_gebied).toBeNull();
+
+    wizard.setInput({ dakvlak_naar_openbaar_toegankelijk_gebied: true });
+    wizard.setInput({ dakvlak: "zijdakvlak" });
+    expect(wizard.input.dakvlak_naar_openbaar_toegankelijk_gebied).toBeNull();
+    wizard.dispose();
+  });
 });
 
 function fakeResult(advies: string): DakkapelRuleResponse {
