@@ -28,6 +28,17 @@ model is loaded only when `embed` is invoked. Install the optional local
 inference dependency with `uv sync --all-packages --all-groups --extra embeddings`
 before running it.
 
+## Dakkapel rule check
+
+The public `wetvia.rules` entrypoint exposes `DakkapelInvoer` and `toets` for a
+deterministic check against the saved Bbl text. Pass measurements as
+`Decimal` values (for example, `Decimal("1.75")`); use `None` for facts that
+are unknown. Results include independent requirement outcomes and citations to
+the official Bbl state used by the implementation. This is a bounded check of
+the listed Bbl conditions, not a complete permit decision: local plan rules
+and the severe-appearance caveat still apply. The result links to the official
+[Vergunningcheck](https://omgevingswet.overheid.nl/checken).
+
 The stored vector defaults to 1024 dimensions, matching the initial
 `Vector(1024)` migration. The database records the active model ID and dimension,
 and the job refuses to mix vector spaces. To switch models at the same
