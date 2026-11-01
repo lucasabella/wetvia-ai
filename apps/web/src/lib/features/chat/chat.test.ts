@@ -5,6 +5,7 @@ import { SourcesStore, type ChatSourceCard } from "../sources/sources.svelte";
 import { ConversationHistoryStore } from "./conversation-history.svelte";
 import type {
   ConversationListResult,
+  ConversationPatch,
   ConversationRepository,
   StoredConversation,
 } from "./conversation-repository";
@@ -395,13 +396,18 @@ class MemoryConversationRepository implements ConversationRepository {
     this.rows.set(conversation.id, snapshot);
   }
 
-  async update(conversation: StoredConversation): Promise<void> {
-    if (!this.rows.has(conversation.id)) {
+  async update(
+    id: string,
+    patch: ConversationPatch,
+  ): Promise<StoredConversation> {
+    const current = this.rows.get(id);
+    if (!current) {
       throw new Error("Conversation no longer exists.");
     }
-    const snapshot = structuredClone(conversation);
+    const snapshot = structuredClone({ ...current, ...patch });
     this.saves.push(snapshot);
-    this.rows.set(conversation.id, snapshot);
+    this.rows.set(id, snapshot);
+    return snapshot;
   }
 
   async delete(id: string): Promise<void> {

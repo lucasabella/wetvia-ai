@@ -106,16 +106,10 @@ export class ConversationHistoryStore {
   async saveMessages(id: string, messages: ChatTurn[]): Promise<boolean> {
     try {
       await this.enqueue(id, async () => {
-        const current = await this.repository.get(id);
-        if (!current) {
-          throw new Error("Conversation no longer exists.");
-        }
-        const updated: StoredConversation = {
-          ...current,
+        const updated = await this.repository.update(id, {
           messages,
           updatedAt: new SvelteDate().toISOString(),
-        };
-        await this.repository.update(updated);
+        });
         this.upsertSummary(updated);
       });
       return true;
@@ -132,16 +126,10 @@ export class ConversationHistoryStore {
     let renamed = false;
     try {
       await this.enqueue(id, async () => {
-        const current = await this.repository.get(id);
-        if (!current) {
-          throw new Error("Conversation no longer exists.");
-        }
-        const updated = {
-          ...current,
+        const updated = await this.repository.update(id, {
           title,
           updatedAt: new SvelteDate().toISOString(),
-        };
-        await this.repository.update(updated);
+        });
         this.upsertSummary(updated);
         renamed = true;
       });

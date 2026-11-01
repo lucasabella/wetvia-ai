@@ -21,14 +21,18 @@ export type ConversationListResult = {
   skippedRecords: number;
 };
 
+export type ConversationPatch =
+  | Pick<StoredConversation, "title" | "updatedAt">
+  | Pick<StoredConversation, "messages" | "updatedAt">;
+
 /** Browser-local storage boundary for conversations. No server adapter exists. */
 export interface ConversationRepository {
   list(): Promise<ConversationListResult>;
   get(id: string): Promise<StoredConversation | undefined>;
   /** Insert a new conversation without replacing an existing ID. */
   create(conversation: StoredConversation): Promise<void>;
-  /** Update a valid existing conversation atomically; never upsert. */
-  update(conversation: StoredConversation): Promise<void>;
+  /** Apply a field patch to a valid existing conversation atomically. */
+  update(id: string, patch: ConversationPatch): Promise<StoredConversation>;
   delete(id: string): Promise<void>;
   clear(): Promise<void>;
 }

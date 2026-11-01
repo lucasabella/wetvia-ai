@@ -3,6 +3,7 @@ import Dexie, { type Table } from "dexie";
 import type {
   ConversationRepository,
   ConversationListResult,
+  ConversationPatch,
   ConversationSummary,
   StoredConversation,
 } from "./conversation-repository";
@@ -73,16 +74,29 @@ export class DexieConversationRepository implements ConversationRepository {
     );
   }
 
-  async update(conversation: StoredConversation): Promise<void> {
-    assertValidConversation(conversation);
+  async update(
+    id: string,
+    patch: ConversationPatch,
+  ): Promise<StoredConversation> {
     const table = this.database.conversations;
-    await this.database.transaction("rw", table, async () => {
-      const current: unknown = await table.get(conversation.id);
+    return this.database.transaction("rw", table, async () => {
+      const current: unknown = await table.get(id);
       if (current === undefined) {
         throw new Error(MISSING_RECORD_ERROR);
       }
-      assertValidConversation(current, conversation.id);
-      await table.put(conversation);
+      const existing = parseConversation(current);
+      if (existing.kind !== "valid" || existing.conversation.id !== id) {
+        throw new Error(INVALID_RECORD_ERROR);
+      }
+      const updated: StoredConversation = {
+        ...existing.conversation,
+        ...("title" in patch ? { title: patch.title } : {}),
+        ...("messages" in patch ? { messages: patch.messages } : {}),
+        updatedAt: patch.updatedAt,
+      };
+      assertValidConversation(updated, id);
+      await table.put(updated);
+      return updated;
     });
   }
 

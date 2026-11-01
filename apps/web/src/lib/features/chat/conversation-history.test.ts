@@ -12,6 +12,7 @@ import {
 import { DexieConversationRepository } from "./dexie-conversation-repository";
 import type {
   ConversationListResult,
+  ConversationPatch,
   ConversationRepository,
   ConversationSummary,
   StoredConversation,
@@ -199,9 +200,9 @@ describe("ConversationHistoryStore", () => {
       ).toBe(false);
       expect(await history.saveMessages(id, [])).toBe(false);
       await expect(
-        repository.update({
-          ...created.conversation,
+        repository.update(id, {
           title: "Synthetic attempted overwrite",
+          updatedAt: created.conversation.updatedAt,
         }),
       ).rejects.toThrow("Stored conversation is corrupt or unsupported.");
       expect(await rawDatabase.table("conversations").get(id)).toEqual(
@@ -249,14 +250,33 @@ describe("ConversationHistoryStore", () => {
     expect(await repository.get(first.conversation.id)).toBeUndefined();
 
     const second = await history.create("Synthetic cross-tab update race");
+    const otherHistory = new ConversationHistoryStore(otherRepository);
+    await otherHistory.hydrate();
+    const updatedTurn = {
+      id: "turn-cross-tab-update",
+      question: "Synthetic concurrent message update",
+      status: "error" as const,
+      sources: [],
+      answer: null,
+      errorMessage: "Synthetic interrupted response",
+    };
     await Promise.allSettled([
-      otherRepository.update({
-        ...second.conversation,
-        title: "Synthetic concurrent update",
-      }),
-      repository.delete(second.conversation.id),
+      history.rename(second.conversation.id, "Synthetic concurrent rename"),
+      otherHistory.saveMessages(second.conversation.id, [updatedTurn]),
     ]);
-    expect(await otherRepository.get(second.conversation.id)).toBeUndefined();
+    const merged = await repository.get(second.conversation.id);
+    expect(merged?.title).toBe("Synthetic concurrent rename");
+    expect(merged?.messages).toEqual([updatedTurn]);
+
+    const third = await history.create("Synthetic cross-tab delete race");
+    await Promise.allSettled([
+      otherRepository.update(third.conversation.id, {
+        title: "Synthetic update before concurrent delete",
+        updatedAt: new Date().toISOString(),
+      }),
+      repository.delete(third.conversation.id),
+    ]);
+    expect(await otherRepository.get(third.conversation.id)).toBeUndefined();
   });
 
   it("clears after delayed writes and rejects writes started during clear-all", async () => {
@@ -388,7 +408,7 @@ class FailingRepository implements ConversationRepository {
     throw new Error("Synthetic storage failure");
   }
 
-  async update(): Promise<void> {
+  async update(): Promise<StoredConversation> {
     throw new Error("Synthetic storage failure");
   }
 
@@ -472,11 +492,17 @@ class DelayedSaveRepository implements ConversationRepository {
     this.rows.set(conversation.id, structuredClone(conversation));
   }
 
-  async update(conversation: StoredConversation): Promise<void> {
-    if (!this.rows.has(conversation.id)) {
+  async update(
+    id: string,
+    patch: ConversationPatch,
+  ): Promise<StoredConversation> {
+    const current = this.rows.get(id);
+    if (!current) {
       throw new Error("Conversation no longer exists.");
     }
-    this.rows.set(conversation.id, structuredClone(conversation));
+    const updated = { ...current, ...patch };
+    this.rows.set(id, structuredClone(updated));
+    return updated;
   }
 
   async delete(id: string): Promise<void> {
