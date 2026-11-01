@@ -42,7 +42,7 @@
       Geschiedenis
     </h2>
     <ConversationHistoryPanel {chat} {history} {idPrefix} {onNavigate} />
-    <DossierPanel {idPrefix} />
+    <DossierPanel {idPrefix} {onNavigate} />
     <SettingsPanel {idPrefix} onClearAll={() => chat.clearAllConversations()} />
   </section>
 </div>

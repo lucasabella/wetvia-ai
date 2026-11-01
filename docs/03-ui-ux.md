@@ -50,11 +50,11 @@
 
 ### 3. Dossier-wizard (dakkapel)
 Stapsgewijs, niet in de chat, want het gaat om gestructureerde data:
-1. **Locatie:** adres → (fase 2) automatische lookup van monumentstatus/omgevingsplan; in de MVP vraagt Wetvia: "Is uw woning een monument of ligt hij in een beschermd stads- of dorpsgezicht? Ja / Nee / Weet ik niet".
-2. **Plaats op het dak:** een illustratie met voor-, achter- en zijdakvlak om aan te klikken. Bij een zijdakvlak volgt "Grenst dit aan de straat of een openbaar pad?".
-3. **Maten:** vijf velden met een schematische tekening die live meebeweegt (hoogte, afstand tot dakvoet, nok, zijkanten). Een rode of groene indicator per eis, met het artikel ernaast.
-4. **Resultaat:** "Waarschijnlijk vergunningvrij" / "Waarschijnlijk vergunning nodig, want …" / "Dat kunnen we niet bepalen, omdat …", met een link naar de Vergunningcheck.
-5. **Conceptdossier:** een preview + download (DOCX/PDF/Markdown) met projectomschrijving, toetsing per eis met citaat, checklist van stukken (tekeningen, foto's), open vragen en een disclaimer.
+1. **Locatie:** het adres is alleen invoer voor de conceptsamenvatting; de MVP doet nog geen automatische lookup en stuurt het adres niet naar de regeltoets. Vraag afzonderlijk naar de monumentrelatie (geen monument, werk in/aan/op, alleen bij, onbekend) en naar een rijksbeschermd stads- of dorpsgezicht.
+2. **Plaats op het dak:** een klikbare SVG met voor-, achter- en zijdakvlak plus onbekend. Vraag naar openbaar toegankelijk gebied bij een zijdakvlak en ook bij een achterdakvlak in een rijksbeschermd stads- of dorpsgezicht.
+3. **Maten:** vijf invoervelden in meters (hoogte, onderzijde tot dakvoet, bovenzijde tot daknok, en linker- en rechterzijkant tot de dakvlakrand), plus de vraag of het dak plat is. Komma en punt zijn toegestaan; een schematische tekening beweegt mee. De API levert per eis een groene, rode of grijze indicator met het artikel. Invoer blijft alleen in de geopende pagina.
+4. **Resultaat:** toon het oordeel van `POST /api/rules/dakkapel`, citaten en officiële bronverwijzingen/provenance, de technische bouwactiviteit apart, het voorbehoud en de Vergunningcheck-link. De client rekent geen wettelijke drempels na.
+5. **Conceptdossier:** toon een controleerbare conceptpreview met de invoer, toetsing per eis en disclaimer. Download en documentgeneratie vallen onder issue #23 en zijn hier niet beschikbaar.
 
 ### 4. Instellingen
 - Model: lokaal (Ollama-URL, modelnaam) / cloud (API-key, wordt alleen in de backend-env opgeslagen en nooit in de browser getoond).

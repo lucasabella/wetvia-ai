@@ -1,6 +1,52 @@
 {
   "components": {
     "schemas": {
+      "ActiviteitResultaatResponse": {
+        "properties": {
+          "activiteit": {
+            "title": "Activiteit",
+            "type": "string"
+          },
+          "artikel": {
+            "title": "Artikel",
+            "type": "string"
+          },
+          "bron": {
+            "$ref": "#/components/schemas/BronverwijzingResponse"
+          },
+          "citaat": {
+            "title": "Citaat",
+            "type": "string"
+          },
+          "contextcitaat": {
+            "title": "Contextcitaat",
+            "type": "string"
+          },
+          "oordeel": {
+            "$ref": "#/components/schemas/Oordeel"
+          },
+          "vergunningcheck_url": {
+            "title": "Vergunningcheck Url",
+            "type": "string"
+          },
+          "voorbehoud": {
+            "title": "Voorbehoud",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activiteit",
+          "oordeel",
+          "artikel",
+          "citaat",
+          "contextcitaat",
+          "bron",
+          "voorbehoud",
+          "vergunningcheck_url"
+        ],
+        "title": "ActiviteitResultaatResponse",
+        "type": "object"
+      },
       "AnswerPoint": {
         "additionalProperties": false,
         "description": "One answer claim with the retrieved source chunks that support it.",
@@ -25,6 +71,73 @@
           "bron_ids"
         ],
         "title": "AnswerPoint",
+        "type": "object"
+      },
+      "BronverwijzingResponse": {
+        "properties": {
+          "artikel": {
+            "title": "Artikel",
+            "type": "string"
+          },
+          "bron_url": {
+            "title": "Bron Url",
+            "type": "string"
+          },
+          "bronbestand": {
+            "title": "Bronbestand",
+            "type": "string"
+          },
+          "bwb_id": {
+            "title": "Bwb Id",
+            "type": "string"
+          },
+          "opgehaald_op": {
+            "format": "date",
+            "title": "Opgehaald Op",
+            "type": "string"
+          },
+          "regeling": {
+            "title": "Regeling",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "toestand_geldig_tot": {
+            "format": "date",
+            "title": "Toestand Geldig Tot",
+            "type": "string"
+          },
+          "toestand_geldig_vanaf": {
+            "format": "date",
+            "title": "Toestand Geldig Vanaf",
+            "type": "string"
+          },
+          "toestand_modified": {
+            "format": "date",
+            "title": "Toestand Modified",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "regeling",
+          "artikel",
+          "url",
+          "bwb_id",
+          "toestand_geldig_vanaf",
+          "toestand_geldig_tot",
+          "toestand_modified",
+          "opgehaald_op",
+          "bronbestand",
+          "bron_url",
+          "sha256"
+        ],
+        "title": "BronverwijzingResponse",
         "type": "object"
       },
       "ChatAnswerEvent": {
@@ -261,6 +374,271 @@
         "title": "ConfiguredChatModes",
         "type": "object"
       },
+      "DakkapelRuleRequest": {
+        "additionalProperties": false,
+        "description": "Complete input for one Bbl dakkapel check.\n\nMeasurements are canonical, non-negative decimal strings. The browser may\naccept a localized comma, but sends the normalized dot-decimal form here.",
+        "properties": {
+          "bovenzijde_onder_daknok_m": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bovenzijde Onder Daknok M"
+          },
+          "dakvlak": {
+            "$ref": "#/components/schemas/Dakvlak"
+          },
+          "dakvlak_naar_openbaar_toegankelijk_gebied": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dakvlak Naar Openbaar Toegankelijk Gebied"
+          },
+          "gebiedsbescherming": {
+            "$ref": "#/components/schemas/Gebiedsbescherming"
+          },
+          "hoogte_m": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hoogte M"
+          },
+          "linker_zijkant_tot_dakvlakrand_m": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linker Zijkant Tot Dakvlakrand M"
+          },
+          "monumentrelatie": {
+            "$ref": "#/components/schemas/Monumentrelatie"
+          },
+          "onderzijde_boven_dakvoet_m": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Onderzijde Boven Dakvoet M"
+          },
+          "plat_dak": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plat Dak"
+          },
+          "rechter_zijkant_tot_dakvlakrand_m": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rechter Zijkant Tot Dakvlakrand M"
+          }
+        },
+        "required": [
+          "dakvlak",
+          "dakvlak_naar_openbaar_toegankelijk_gebied",
+          "plat_dak",
+          "hoogte_m",
+          "onderzijde_boven_dakvoet_m",
+          "bovenzijde_onder_daknok_m",
+          "linker_zijkant_tot_dakvlakrand_m",
+          "rechter_zijkant_tot_dakvlakrand_m",
+          "monumentrelatie",
+          "gebiedsbescherming"
+        ],
+        "title": "DakkapelRuleRequest",
+        "type": "object"
+      },
+      "DakkapelRuleResponse": {
+        "properties": {
+          "advies": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advies"
+          },
+          "eindoordeel": {
+            "$ref": "#/components/schemas/Oordeel"
+          },
+          "eisen": {
+            "items": {
+              "$ref": "#/components/schemas/EisResultaatResponse"
+            },
+            "title": "Eisen",
+            "type": "array"
+          },
+          "technische_bouwactiviteit": {
+            "$ref": "#/components/schemas/ActiviteitResultaatResponse"
+          },
+          "vergunningcheck_url": {
+            "title": "Vergunningcheck Url",
+            "type": "string"
+          },
+          "voorbehoud": {
+            "title": "Voorbehoud",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eindoordeel",
+          "eisen",
+          "technische_bouwactiviteit",
+          "advies",
+          "voorbehoud",
+          "vergunningcheck_url"
+        ],
+        "title": "DakkapelRuleResponse",
+        "type": "object"
+      },
+      "Dakvlak": {
+        "description": "Roof face where the dakkapel is placed.",
+        "enum": [
+          "achterdakvlak",
+          "zijdakvlak",
+          "ander_dakvlak",
+          "onbekend"
+        ],
+        "title": "Dakvlak",
+        "type": "string"
+      },
+      "EisCode": {
+        "enum": [
+          "locatie",
+          "plat_dak",
+          "hoogte",
+          "onderzijde",
+          "bovenzijde",
+          "linker_zijkant",
+          "rechter_zijkant",
+          "monument",
+          "gebiedsbescherming"
+        ],
+        "title": "EisCode",
+        "type": "string"
+      },
+      "EisResultaatResponse": {
+        "properties": {
+          "artikel": {
+            "title": "Artikel",
+            "type": "string"
+          },
+          "bron": {
+            "$ref": "#/components/schemas/BronverwijzingResponse"
+          },
+          "citaat": {
+            "title": "Citaat",
+            "type": "string"
+          },
+          "contextcitaat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextcitaat"
+          },
+          "eis": {
+            "$ref": "#/components/schemas/EisCode"
+          },
+          "omschrijving": {
+            "title": "Omschrijving",
+            "type": "string"
+          },
+          "toelichting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toelichting"
+          },
+          "vergunningcheck_url": {
+            "title": "Vergunningcheck Url",
+            "type": "string"
+          },
+          "voldaan": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voldaan"
+          },
+          "voorbehoud": {
+            "title": "Voorbehoud",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eis",
+          "omschrijving",
+          "voldaan",
+          "artikel",
+          "citaat",
+          "contextcitaat",
+          "toelichting",
+          "bron",
+          "voorbehoud",
+          "vergunningcheck_url"
+        ],
+        "title": "EisResultaatResponse",
+        "type": "object"
+      },
       "FollowUpStep": {
         "additionalProperties": false,
         "description": "A concrete next step with an HTTP(S) destination.",
@@ -283,6 +661,15 @@
         ],
         "title": "FollowUpStep",
         "type": "object"
+      },
+      "Gebiedsbescherming": {
+        "enum": [
+          "geen_rijksbeschermd_stads_of_dorpsgezicht",
+          "rijksbeschermd_stads_of_dorpsgezicht",
+          "onbekend"
+        ],
+        "title": "Gebiedsbescherming",
+        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -335,6 +722,26 @@
         ],
         "title": "HealthResponse",
         "type": "object"
+      },
+      "Monumentrelatie": {
+        "description": "Relation of the work to any protected monument type named in Bbl 2.30.",
+        "enum": [
+          "geen_monument",
+          "in_aan_of_op_monument",
+          "bij_monument",
+          "onbekend"
+        ],
+        "title": "Monumentrelatie",
+        "type": "string"
+      },
+      "Oordeel": {
+        "enum": [
+          "waarschijnlijk_vergunningvrij",
+          "waarschijnlijk_vergunningplichtig",
+          "onbepaald"
+        ],
+        "title": "Oordeel",
+        "type": "string"
       },
       "ScoredChunkResponse": {
         "properties": {
@@ -678,6 +1085,48 @@
         "summary": "Read Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/rules/dakkapel": {
+      "post": {
+        "description": "Map validated HTTP input to the public pure rules API.",
+        "operationId": "check_dakkapel_api_rules_dakkapel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DakkapelRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DakkapelRuleResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Dakkapel",
+        "tags": [
+          "rules"
         ]
       }
     },

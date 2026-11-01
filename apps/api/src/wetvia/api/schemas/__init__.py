@@ -13,6 +13,13 @@ from wetvia.api.schemas.chat import (
     ChatSourcesEvent,
 )
 from wetvia.api.schemas.health import ConfiguredChatModes, HealthResponse
+from wetvia.api.schemas.rules import (
+    ActiviteitResultaatResponse,
+    BronverwijzingResponse,
+    DakkapelRuleRequest,
+    DakkapelRuleResponse,
+    EisResultaatResponse,
+)
 from wetvia.api.schemas.search import (
     ScoredChunkResponse,
     SearchResponse,
@@ -21,6 +28,8 @@ from wetvia.api.schemas.search import (
 )
 
 __all__ = [
+    "ActiviteitResultaatResponse",
+    "BronverwijzingResponse",
     "ChatAnswerEvent",
     "ChatDoneEvent",
     "ChatErrorEvent",
@@ -32,6 +41,9 @@ __all__ = [
     "ChatSourceCard",
     "ChatSourcesEvent",
     "ConfiguredChatModes",
+    "DakkapelRuleRequest",
+    "DakkapelRuleResponse",
+    "EisResultaatResponse",
     "HealthResponse",
     "ScoredChunkResponse",
     "SearchResponse",

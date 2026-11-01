@@ -5,6 +5,7 @@
   import LibraryIcon from "@lucide/svelte/icons/library";
   import MenuIcon from "@lucide/svelte/icons/menu";
   import ChatPanel from "$lib/features/chat/chat-panel.svelte";
+  import DakkapelWizard from "$lib/features/dossier/dakkapel-wizard.svelte";
   import { ChatStore } from "$lib/features/chat/chat.svelte";
   import { ConversationHistoryStore } from "$lib/features/chat/conversation-history.svelte";
   import { DexieConversationRepository } from "$lib/features/chat/dexie-conversation-repository";
@@ -14,6 +15,8 @@
   import { DESKTOP_MEDIA_QUERY, sheetStaysOpen } from "$lib/shell/sheets";
   import { Button } from "$lib/ui/button/index.js";
   import * as Sheet from "$lib/ui/sheet/index.js";
+
+  let { view = "chat" }: { view?: "chat" | "dakkapel" } = $props();
 
   let historyOpen = $state(false);
   let sourcesOpen = $state(false);
@@ -103,20 +106,24 @@
       <img src="/logo.svg" width="32" height="32" alt="" />
       Wetvia
     </a>
-    <Button
-      variant="outline"
-      class="ml-auto"
-      aria-expanded={sourcesOpen}
-      aria-controls="bronnen-sheet"
-      onclick={() => (sourcesOpen = true)}
-    >
-      <LibraryIcon />
-      Bronnen
-    </Button>
+    {#if view === "chat"}
+      <Button
+        variant="outline"
+        class="ml-auto"
+        aria-expanded={sourcesOpen}
+        aria-controls="bronnen-sheet"
+        onclick={() => (sourcesOpen = true)}
+      >
+        <LibraryIcon />
+        Bronnen
+      </Button>
+    {:else}
+      <span class="ml-auto text-sm font-medium">Dakkapeltoets</span>
+    {/if}
   </header>
 
   <div
-    class="grid min-h-0 flex-1 md:grid-cols-[16rem_minmax(0,1fr)_18rem] lg:grid-cols-[18rem_minmax(0,1fr)_22rem]"
+    class={`grid min-h-0 flex-1 ${view === "chat" ? "md:grid-cols-[16rem_minmax(0,1fr)_18rem] lg:grid-cols-[18rem_minmax(0,1fr)_22rem]" : "md:grid-cols-[16rem_minmax(0,1fr)]"}`}
   >
     <aside
       class="hidden flex-col gap-2 border-r border-border p-4 md:flex"
@@ -125,17 +132,23 @@
       <LeftColumn {chat} {history} />
     </aside>
     <main id="inhoud" class="min-h-0 min-w-0 p-3 md:p-4">
-      <ChatPanel {chat} onSourceSelect={selectSource} />
+      {#if view === "chat"}
+        <ChatPanel {chat} onSourceSelect={selectSource} />
+      {:else}
+        <DakkapelWizard client={apiClient} />
+      {/if}
     </main>
-    <aside
-      class="hidden min-h-0 flex-col border-l border-border p-4 md:flex"
-      aria-labelledby="bronnen-kop"
-    >
-      <h2 id="bronnen-kop" class="mb-3 shrink-0 text-sm font-medium">
-        Bronnen
-      </h2>
-      <SourcesPanel {sources} labelledBy="bronnen-kop" idPrefix="desktop-" />
-    </aside>
+    {#if view === "chat"}
+      <aside
+        class="hidden min-h-0 flex-col border-l border-border p-4 md:flex"
+        aria-labelledby="bronnen-kop"
+      >
+        <h2 id="bronnen-kop" class="mb-3 shrink-0 text-sm font-medium">
+          Bronnen
+        </h2>
+        <SourcesPanel {sources} labelledBy="bronnen-kop" idPrefix="desktop-" />
+      </aside>
+    {/if}
   </div>
 </div>
 
@@ -158,15 +171,21 @@
   </Sheet.Content>
 </Sheet.Root>
 
-<Sheet.Root bind:open={sourcesOpen}>
-  <Sheet.Content
-    id="bronnen-sheet"
-    side="bottom"
-    class="max-h-[70vh] md:hidden"
-  >
-    <Sheet.Header>
-      <Sheet.Title id="bronnen-sheet-kop">Bronnen</Sheet.Title>
-    </Sheet.Header>
-    <SourcesPanel {sources} labelledBy="bronnen-sheet-kop" idPrefix="mobile-" />
-  </Sheet.Content>
-</Sheet.Root>
+{#if view === "chat"}
+  <Sheet.Root bind:open={sourcesOpen}>
+    <Sheet.Content
+      id="bronnen-sheet"
+      side="bottom"
+      class="max-h-[70vh] md:hidden"
+    >
+      <Sheet.Header>
+        <Sheet.Title id="bronnen-sheet-kop">Bronnen</Sheet.Title>
+      </Sheet.Header>
+      <SourcesPanel
+        {sources}
+        labelledBy="bronnen-sheet-kop"
+        idPrefix="mobile-"
+      />
+    </Sheet.Content>
+  </Sheet.Root>
+{/if}
