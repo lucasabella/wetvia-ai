@@ -2,6 +2,7 @@
   import { resolve } from "$app/paths";
   import { onMount, tick } from "svelte";
   import type {
+    DakkapelDossierRequest,
     DakkapelRuleRequest,
     DakkapelRuleResponse,
     WetviaClient,
@@ -97,6 +98,9 @@
   ] as const satisfies readonly DakkapelRuleResponse["eisen"][number]["eis"][];
 
   let address = $state("");
+  let downloading = $state(false);
+  let downloadError = $state<string | null>(null);
+  let downloadStarted = $state(false);
 
   onMount(() => {
     wizard.refresh();
@@ -149,6 +153,11 @@
     );
   }
 
+  function displayMeasurement(field: MeasurementField): string {
+    const value = wizard.rawMeasurements[field].trim();
+    return value ? `${value} m` : "Niet ingevuld";
+  }
+
   function sketchDimension(
     field: MeasurementField,
     fallback: number,
@@ -178,6 +187,39 @@
     void tick().then(() => {
       if (firstInvalid) document.getElementById(firstInvalid)?.focus();
     });
+  }
+
+  async function downloadDossier(format: "docx" | "pdf" | "md"): Promise<void> {
+    if (downloading) return;
+    downloading = true;
+    downloadError = null;
+    downloadStarted = false;
+    const body: DakkapelDossierRequest = {
+      locatie: address.trim() || null,
+      invoer: { ...wizard.input },
+    };
+    try {
+      const { data, error } = await client.POST("/api/dossier/dakkapel", {
+        params: { query: { format } },
+        body,
+        parseAs: "blob",
+      });
+      if (error || !data) {
+        throw new Error("The dossier attachment request failed.");
+      }
+      const url = URL.createObjectURL(data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `wetvia-dakkapel-concept.${format}`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      downloadStarted = true;
+    } catch {
+      downloadError =
+        "Het conceptbestand kon niet worden gemaakt. Probeer het opnieuw.";
+    } finally {
+      downloading = false;
+    }
   }
 
   const diagramHeight = $derived(sketchDimension("hoogte_m", 58, 18, 64));
@@ -805,7 +847,7 @@
             {#each MEASUREMENT_FIELDS as field (field)}
               <li>
                 {measurementDetails.find((detail) => detail.field === field)
-                  ?.label}: {wizard.rawMeasurements[field] || "Niet ingevuld"} m
+                  ?.label}: {displayMeasurement(field)}
               </li>
             {/each}
           </ul>
@@ -846,10 +888,53 @@
         {:else if wizard.error}
           <p role="alert" class="text-sm text-red-900">{wizard.error}</p>
         {/if}
-        <p class="text-sm text-muted-foreground">
-          Deze stap toont alleen een conceptvoorbeeld. Documenten downloaden of
-          indienen kan hier nog niet.
-        </p>
+        <section aria-labelledby="concept-download-kop" class="space-y-3">
+          <h3 id="concept-download-kop" class="font-semibold">
+            Conceptbestanden
+          </h3>
+          <p class="text-sm text-muted-foreground">
+            De bestanden bevatten alleen de ingevoerde gegevens en de lokale
+            regeltoets. Controleer het dossier voordat u het verdergeeft.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="min-h-11 rounded-md border border-border px-4 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={downloading}
+              onclick={() => void downloadDossier("docx")}
+            >
+              Download als Word
+            </button>
+            <button
+              type="button"
+              class="min-h-11 rounded-md border border-border px-4 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={downloading}
+              onclick={() => void downloadDossier("pdf")}
+            >
+              Download als PDF
+            </button>
+            <button
+              type="button"
+              class="min-h-11 rounded-md border border-border px-4 text-sm font-medium hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={downloading}
+              onclick={() => void downloadDossier("md")}
+            >
+              Download als Markdown
+            </button>
+          </div>
+          {#if downloading}
+            <p role="status" aria-live="polite" class="text-sm">
+              Het conceptbestand wordt gemaakt…
+            </p>
+          {:else if downloadStarted}
+            <p role="status" aria-live="polite" class="text-sm">
+              De download is gestart.
+            </p>
+          {/if}
+          {#if downloadError}
+            <p role="alert" class="text-sm text-red-900">{downloadError}</p>
+          {/if}
+        </section>
       </section>
     {/if}
   </div>

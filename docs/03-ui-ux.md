@@ -54,7 +54,7 @@ Stapsgewijs, niet in de chat, want het gaat om gestructureerde data:
 2. **Plaats op het dak:** een klikbare SVG met voor-, achter- en zijdakvlak plus onbekend. Vraag naar openbaar toegankelijk gebied bij een zijdakvlak en ook bij een achterdakvlak in een rijksbeschermd stads- of dorpsgezicht.
 3. **Maten:** vijf invoervelden in meters (hoogte, onderzijde tot dakvoet, bovenzijde tot daknok, en linker- en rechterzijkant tot de dakvlakrand), plus de vraag of het dak plat is. Komma en punt zijn toegestaan; een schematische tekening beweegt mee. De API levert per eis een groene, rode of grijze indicator met het artikel. Invoer blijft alleen in de geopende pagina.
 4. **Resultaat:** toon het oordeel van `POST /api/rules/dakkapel`, citaten en officiële bronverwijzingen/provenance, de technische bouwactiviteit apart, het voorbehoud en de Vergunningcheck-link. De client rekent geen wettelijke drempels na.
-5. **Conceptdossier:** toon een controleerbare conceptpreview met de invoer, toetsing per eis en disclaimer. Download en documentgeneratie vallen onder issue #23 en zijn hier niet beschikbaar.
+5. **Conceptdossier:** toon een controleerbare preview met de invoer, toetsing per eis en disclaimer. Bied DOCX-, PDF- en Markdown-downloads aan met het zichtbare CONCEPT-watermerk en de exacte disclosure. Aanvragergegevens blijven placeholders. De officiële DSO-LV-stukkenlijst is nog niet opgehaald of geverifieerd; toon geen ingevulde checklistitems totdat issue #24 brondata levert.
 
 ### 4. Instellingen
 - Model: lokaal (Ollama-URL, modelnaam) / cloud (API-key, wordt alleen in de backend-env opgeslagen en nooit in de browser getoond).

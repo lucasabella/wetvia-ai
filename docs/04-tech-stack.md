@@ -29,6 +29,10 @@
 
 ### Security en privacy (basis)
 
+WeasyPrint uses native Cairo, Pango, Fontconfig and GDK-Pixbuf libraries on
+Linux. The API CI job installs them explicitly; see the dossier package README
+for the template's resource-fetch boundary.
+
 - **Geheimen** alleen in `.env` (in `.gitignore`), met een `.env.example` met placeholders. Gebruik `pydantic-settings`. **Commit nooit een key.** Activeer GitHub secret scanning en push protection.
 - **Rate limiting** (`slowapi`) op `/chat` en `/dossier` zodra er een publieke demo is.
 - **Prompt-injectie:** bron-chunks gaan als data in de prompt (tussen duidelijke delimiters), en het systeem negeert instructies in geüploade documenten. Eval-categorie F test dit.
