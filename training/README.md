@@ -45,7 +45,23 @@ Deze criteria staan ook in `docs/02-ai-architectuur.md` en issues #34/#35. Zonde
 ## Bestanden
 
 - `train_qwen35_lora.py` — bf16-LoRA voor lokaal 0.8B/2B, met datasetvalidatie, preflight en lokaal opslaan van alleen de adapter.
+- `answer_v1.py` — gedeeld AnswerV1-contract; trainer en generator valideren hiermee elke rij.
+- `generate_sft.py` — generatiepipeline (issue #34): bronfragmenten → teacher-batch of directe gesprekken → verifier → dedup → n-gram-overlap met de evalset → conceptdraft, data card en reviewsteekproef.
 - `DATA_CARD.template.md` — herkomst, licentie, generatie, filtering, menselijke review en beperkingen.
-- `LOCAL-QUICKSTART.md` — pc-installatie- en runstappen.
+- `LOCAL-QUICKSTART.md` — pc-installatie- en runstappen (Windows, PowerShell + Ollama).
 
 Trainingsdata, runs, caches en modelgewichten blijven lokaal en worden door `.gitignore` uitgesloten.
+
+## Dataflow (issue #34)
+
+1. Zet CC0-fragmenten in `training/data/bronnen.jsonl` (velden: `id`, `tekst`, `bron_uri`, `peildatum`, `status` (`geldig`|`voorstel`), `documentsoort`, `licentie`).
+2. `--mode requests` schrijft OpenAI-batch-requestregels voor de Scaleway batch-API (teacher: Qwen3.8-27B); upload die apart.
+3. `--mode ingest --batch-results …` of `--mode direct` (tegen Ollama of een OpenAI-compat endpoint) verwerkt antwoorden → verifier, dedup, n-gram-check → `sft-concept-*.jsonl` + `DATA_CARD-concept-*.md` + reviewsteekproef.
+4. Review minimaal 100 voorbeelden; kopieer gecontroleerde rijen naar `training/data/sft.jsonl` (minstens 20 rijen voor de trainer, doel 1.500–3.000) en vul `DATA_CARD.md` in.
+5. Pas train je reviewed set: zie LOCAL-QUICKSTART.md.
+
+De tests van deze map draaien niet in CI (geen GPU nodig); lokaal via de eval-omgeving:
+
+```bash
+uv run --project eval python -m pytest training/tests -q
+```

@@ -95,6 +95,14 @@ Voor iedere regel:
 
 Dit is alleen de vorm van één voorbeeld, geen goedgekeurd trainingsvoorbeeld. De assistentinhoud moet exacte `AnswerV1`-JSON zijn en de `peildatum` moet bij de bron passen. `metadata` is voor audit en wordt niet naar het model gevoerd. Zie [DATA_CARD.template.md](DATA_CARD.template.md).
 
+Voorstel: genereer conceptvoorbeelden in plaats van met de hand te typen. Zet CC0-fragmenten in `training/data/bronnen.jsonl` en draai:
+
+```powershell
+uv run --project eval python training/generate_sft.py --mode requests
+```
+
+Upload de requestregels naar de Scaleway batch-API (teacher: Qwen3.8-27B) en verwerk het resultaat met `--mode ingest`; de pipeline valideert elke kandidaat, dedupliceert en schrijft een conceptdraft plus data card. Review minimaal 100 voorbeelden (het daarvoor gegenereerde steekproefbestand) en kopieer de goedgekeurde rijen naar `training/data/sft.jsonl`. Zie training/README.md, "Dataflow".
+
 Gebruik voor Tweede Kamerdata een expliciet taakdoel, bijvoorbeeld samenvatten mét bronverwijzingen, of brongebonden vragen over voorstellen. Vermeld in de broncontext datum en documentstatus; train niet alsof een wetsvoorstel geldend recht is. De officiële open-data-portal is [opendata.tweedekamer.nl](https://opendata.tweedekamer.nl/). Projectdocumentatie noemt parlementaire open data CC0; registreer de exacte dataset en licentiebron in de data card.
 
 ## Stap 3: train lokaal

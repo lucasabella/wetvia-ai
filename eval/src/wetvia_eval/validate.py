@@ -2,7 +2,7 @@
 
 De veldregels staan in `eval/data/README.md`. Het tooling-gedeelte hier is
 agent-werk; de vragen zelf blijven menselijk werk (issues #13, #26).
-Geen regel hier verzinnt wettekst of artikelnummers; de validator kijkt
+De validator verzint geen wettekst of artikelnummers; de validator kijkt
 alleen naar structuur, niet naar inhoud.
 """
 

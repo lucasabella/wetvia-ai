@@ -7,11 +7,11 @@ import hashlib
 import json
 import random
 import sys
-from datetime import date
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+
+from answer_v1 import validate_row
 
 _DEFAULT_MODEL = "Qwen/Qwen3.5-0.8B"
 _TARGET_MODULES = [
@@ -23,15 +23,6 @@ _TARGET_MODULES = [
     "up_proj",
     "down_proj",
 ]
-_ANSWER_FIELDS = {
-    "status",
-    "samenvatting",
-    "punten",
-    "voorbehouden",
-    "vervolgstappen",
-    "peildatum",
-}
-_STATUSES = {"beantwoord", "onzeker", "buiten_scope"}
 
 
 def _parse_args() -> argparse.Namespace:
@@ -60,155 +51,34 @@ def _load_rows(path: Path) -> list[dict[str, Any]]:
         if not raw_line.strip():
             continue
         try:
-            row = json.loads(raw_line)
+            row: object = json.loads(raw_line)
         except json.JSONDecodeError as exc:
             raise ValueError(f"Ongeldige JSON op regel {line_number}: {exc}") from exc
         if not isinstance(row, dict):
             raise ValueError(f"Regel {line_number}: verwacht een JSON-object")
 
         item_id = row.get("id")
+        label = (
+            f"Regel {line_number} ({item_id})"
+            if isinstance(item_id, str)
+            else (f"Regel {line_number}")
+        )
         if not isinstance(item_id, str) or not item_id.strip():
-            raise ValueError(f"Regel {line_number}: `id` moet een niet-lege string zijn")
+            raise ValueError(f"{label}: `id` moet een niet-lege string zijn")
         if item_id in seen_ids:
-            raise ValueError(f"Regel {line_number}: dubbel `id` {item_id!r}")
+            raise ValueError(f"{label}: dubbel `id` {item_id!r}")
         seen_ids.add(item_id)
 
-        messages = row.get("messages")
-        if not isinstance(messages, list) or len(messages) < 2:
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): `messages` moet minstens twee berichten bevatten"
-            )
-        if any(
-            not isinstance(message, dict)
-            or not isinstance(message.get("role"), str)
-            or message["role"] not in {"system", "user", "assistant"}
-            or not isinstance(message.get("content"), str)
-            or not message["content"].strip()
-            for message in messages
-        ):
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): elk bericht vereist role en tekstuele content"
-            )
-        roles = [message["role"] for message in messages]
-        if roles[-1] != "assistant" or roles.count("user") != 1 or roles.count("assistant") != 1:
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): "
-                "verwacht één user- en één laatste assistant-bericht"
-            )
-        if roles.count("system") > 1 or ("system" in roles and roles[0] != "system"):
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): optioneel system-bericht moet vooraan staan"
-            )
-
-        metadata = row.get("metadata")
-        if not isinstance(metadata, dict):
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): `metadata` met bronprovenance ontbreekt"
-            )
-        source_uris = metadata.get("source_uris")
-        if (
-            not isinstance(source_uris, list)
-            or not source_uris
-            or any(
-                not isinstance(uri, str) or not uri.startswith(("https://", "http://"))
-                for uri in source_uris
-            )
-        ):
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): `metadata.source_uris` moet bron-URL's bevatten"
-            )
-        if not isinstance(metadata.get("license"), str) or not metadata["license"].strip():
-            raise ValueError(f"Regel {line_number} ({item_id}): `metadata.license` ontbreekt")
-        if not isinstance(metadata.get("negative"), bool):
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): `metadata.negative` moet true/false zijn"
-            )
-
-        _validate_answer(row, line_number, item_id, metadata["negative"])
-        rows.append({"id": item_id, "messages": messages})
+        structural_errors = validate_row(row)
+        if structural_errors:
+            raise ValueError(f"{label}: " + "; ".join(structural_errors))
+        rows.append({"id": item_id, "messages": row["messages"]})
 
     if len(rows) < 20:
         raise ValueError(
             "Minstens 20 gecontroleerde voorbeelden zijn nodig voor een train/validatiesplit."
         )
     return rows
-
-
-def _validate_answer(row: dict[str, Any], line_number: int, item_id: str, negative: bool) -> None:
-    content = row["messages"][-1]["content"]
-    try:
-        answer = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Regel {line_number} ({item_id}): laatste assistant-bericht is geen ruwe JSON"
-        ) from exc
-    if not isinstance(answer, dict) or set(answer) != _ANSWER_FIELDS:
-        raise ValueError(
-            f"Regel {line_number} ({item_id}): "
-            "assistant-uitvoer moet exact de velden van AnswerV1 bevatten"
-        )
-    if not isinstance(answer["status"], str) or answer["status"] not in _STATUSES:
-        raise ValueError(f"Regel {line_number} ({item_id}): onbekende AnswerV1-status")
-    if not isinstance(answer["samenvatting"], str) or not answer["samenvatting"].strip():
-        raise ValueError(f"Regel {line_number} ({item_id}): `samenvatting` moet tekst bevatten")
-    if len(answer["samenvatting"].split()) > 80:
-        raise ValueError(
-            f"Regel {line_number} ({item_id}): `samenvatting` is langer dan 80 woorden"
-        )
-    if not isinstance(answer["punten"], list) or not isinstance(answer["voorbehouden"], list):
-        raise ValueError(
-            f"Regel {line_number} ({item_id}): `punten` en `voorbehouden` moeten lijsten zijn"
-        )
-    if any(not isinstance(value, str) or not value.strip() for value in answer["voorbehouden"]):
-        raise ValueError(f"Regel {line_number} ({item_id}): elk voorbehoud moet tekst bevatten")
-    if not isinstance(answer["vervolgstappen"], list):
-        raise ValueError(f"Regel {line_number} ({item_id}): `vervolgstappen` moet een lijst zijn")
-    if answer["status"] == "beantwoord" and not answer["punten"]:
-        raise ValueError(f"Regel {line_number} ({item_id}): `beantwoord` vereist geciteerde punten")
-    for point in answer["punten"]:
-        if (
-            not isinstance(point, dict)
-            or set(point) != {"tekst", "bron_ids"}
-            or not isinstance(point["tekst"], str)
-            or not point["tekst"].strip()
-            or not isinstance(point["bron_ids"], list)
-            or not point["bron_ids"]
-            or any(
-                not isinstance(source_id, str) or not source_id.strip()
-                for source_id in point["bron_ids"]
-            )
-            or len(point["bron_ids"]) != len(set(point["bron_ids"]))
-        ):
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): elk punt vereist tekst en bron-ID's"
-            )
-    for step in answer["vervolgstappen"]:
-        if not isinstance(step, dict) or set(step) != {"tekst", "url"}:
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): elke vervolgstap vereist tekst en een URL"
-            )
-        parsed_url = urlparse(step["url"] if isinstance(step["url"], str) else "")
-        if (
-            not isinstance(step["tekst"], str)
-            or not step["tekst"].strip()
-            or parsed_url.scheme not in {"http", "https"}
-            or not parsed_url.netloc
-        ):
-            raise ValueError(
-                f"Regel {line_number} ({item_id}): "
-                "elke vervolgstap vereist tekst en een HTTP(S)-URL"
-            )
-    try:
-        date.fromisoformat(answer["peildatum"])
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"Regel {line_number} ({item_id}): `peildatum` moet YYYY-MM-DD zijn"
-        ) from exc
-    if negative and (answer["status"] != "onzeker" or answer["punten"]):
-        raise ValueError(
-            f"Regel {line_number} ({item_id}): "
-            "negatieve voorbeelden moeten `onzeker` zijn zonder antwoordpunten"
-        )
 
 
 def _package_version(package: str) -> str | None:
