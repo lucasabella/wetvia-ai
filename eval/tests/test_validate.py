@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from wetvia_eval.toestand import StandaardToestanden
 from wetvia_eval.validate import DatasetReport, main, validate_dataset
 
 
@@ -20,8 +21,8 @@ def _golden(**overrides: object) -> dict[str, object]:
         "categorie": "A",
         "verwachte_status": "beantwoord",
         "kernfeiten": ["Voorwaarde X geldt op deze peildatum."],
-        "gouden_bronnen": [{"bwb_id": "BWBR0010388", "artikel": "2.29", "onderdeel": "b"}],
-        "peildatum": "2026-11-01",
+        "gouden_bronnen": [{"bwb_id": "BWBR0041297", "artikel": "2.29", "onderdeel": "b"}],
+        "peildatum": "2026-11-06",
         "concept": True,
     }
     row.update(overrides)
@@ -130,6 +131,27 @@ class TestDetectieEnAb:
         report = validate_dataset(path, "rommel")
         assert not report.ok
         assert any("datasetsoort" in error for error in report.errors)
+
+
+class TestToestand:
+    def test_gouden_bron_in_de_toestand_bestaat(self, tmp_path: Path) -> None:
+        path = _write(tmp_path / "v0.jsonl", [_golden()])
+        report = validate_dataset(path, "retrieval", toestand_paden=StandaardToestanden)
+        assert report.ok
+        assert report.toestand_bronnen_gecontroleerd == 1
+
+    def test_gemaakte_gouden_bron_faalt_tegen_toestand(self, tmp_path: Path) -> None:
+        bron = {"bwb_id": "BWBR0000000", "artikel": "9.9", "onderdeel": None}
+        pad = _write(tmp_path / "v0.jsonl", [_golden(gouden_bronnen=[bron])])
+        report = validate_dataset(pad, "retrieval", toestand_paden=StandaardToestanden)
+        assert not report.ok
+        assert any("bestaat niet in de toestand" in fout for fout in report.errors)
+
+    def test_onderdeel_moet_bestaan_binnen_artikel(self, tmp_path: Path) -> None:
+        bron = {"bwb_id": "BWBR0041297", "artikel": "2.29", "onderdeel": "zz"}
+        pad = _write(tmp_path / "v0.jsonl", [_golden(gouden_bronnen=[bron])])
+        report = validate_dataset(pad, "retrieval", toestand_paden=StandaardToestanden)
+        assert not report.ok
 
 
 class TestMainEnRender:

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from wetvia_eval.ab_eval import load_probes
+from wetvia_eval.toestand import StandaardToestanden, ToestandIndex, bouw_index
 
 _CATEGORIE_RETRIEVAL = frozenset({"A", "B", "C", "D", "E", "F"})
 _VERWACHTE_STATUSEN = frozenset({"beantwoord", "onzeker", "buiten_scope"})
@@ -33,6 +34,8 @@ class DatasetReport:
     per_status: dict[str, int] = field(default_factory=dict)
     concept_true: int = 0
     concept_false: int = 0
+    toestand_bronnen_gecontroleerd: int = 0
+    toestand_bestanden: tuple[str, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -59,6 +62,11 @@ class DatasetReport:
                 lines.append(
                     "Let op: items met concept=false tellen als Wetvia-kwaliteit; "
                     "zet die pas op false na menselijke controle."
+                )
+            if self.toestand_bestanden:
+                lines.append(
+                    f"toestand-controle: {self.toestand_bronnen_gecontroleerd} gouden bronnen "
+                    f"tegen {len(self.toestand_bestanden)} toestand(en) gecheckt"
                 )
         if self.errors:
             lines.append("")
@@ -200,7 +208,34 @@ def _validate_retrieval_row(report: DatasetReport, line_number: int, row: dict[s
         _validate_golden_bronnen(report, line_number, row["gouden_bronnen"], verwachte_status)
 
 
-def validate_dataset(path: Path, kind: str | None = None) -> DatasetReport:
+def _valideer_tegen_toestand(
+    report: DatasetReport,
+    rows: Sequence[tuple[int, dict[str, Any]]],
+    toestand: ToestandIndex,
+) -> None:
+    """Elke gouden bron moet bestaan in de geladen toestand (issue #13)."""
+    for line_number, row in rows:
+        bronnen = row.get("gouden_bronnen")
+        if not isinstance(bronnen, list):
+            continue
+        for bron in bronnen:
+            if not isinstance(bron, dict):
+                continue
+            report.toestand_bronnen_gecontroleerd += 1
+            verwijzing = f"({bron.get('bwb_id')}, {bron.get('artikel')}, {bron.get('onderdeel')})"
+            if not toestand.bestaat(
+                str(bron.get("bwb_id") or ""),
+                str(bron.get("artikel") or ""),
+                bron.get("onderdeel") if isinstance(bron.get("onderdeel"), str) else None,
+            ):
+                report.error(line_number, f"gouden bron {verwijzing} bestaat niet in de toestand")
+
+
+def validate_dataset(
+    path: Path,
+    kind: str | None = None,
+    toestand_paden: tuple[Path, ...] | None = None,
+) -> DatasetReport:
     """Valideer een datasetbestand. `kind=None` betekent automatisch afleiden."""
     rows, read_errors = _load_jsonl(path)
     if kind is None:
@@ -228,6 +263,7 @@ def validate_dataset(path: Path, kind: str | None = None) -> DatasetReport:
         return report
 
     seen_ids: dict[str, int] = {}
+    gouden_plaatsen: list[tuple[int, dict[str, Any]]] = []
     for line_number, row in rows:
         report.items += 1
         item_id = row.get("id")
@@ -242,6 +278,16 @@ def validate_dataset(path: Path, kind: str | None = None) -> DatasetReport:
             _validate_bench_row(report, line_number, row)
         else:
             _validate_retrieval_row(report, line_number, row)
+            gouden_plaatsen.append((line_number, row))
+
+    if kind == "retrieval" and toestand_paden is not None:
+        try:
+            index = bouw_index(toestand_paden)
+        except (OSError, ValueError) as exc:
+            report.errors.append(f"toestand-index: {exc}")
+        else:
+            report.toestand_bestanden = index.bestanden
+            _valideer_tegen_toestand(report, gouden_plaatsen, index)
 
     if not rows:
         report.errors.append("dataset is leeg; ook een lege set hoort gemarkeerd te worden")
@@ -257,10 +303,16 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="datasetsoort; default: automatisch afleiden",
     )
+    parser.add_argument(
+        "--no-toestand",
+        action="store_true",
+        help="gouden bronnen niet controleren tegen de toestand-fixtures",
+    )
     try:
         args = parser.parse_args(argv)
     except SystemExit:
         return 2
-    report = validate_dataset(args.dataset, args.kind)
+    toestand_paden = None if args.no_toestand else StandaardToestanden
+    report = validate_dataset(args.dataset, args.kind, toestand_paden=toestand_paden)
     print(report.render())
     return 0 if report.ok else 1
