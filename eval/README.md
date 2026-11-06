@@ -94,6 +94,23 @@ gemeten` betekent een lege noemer, nooit een verzonnen getal. Ieder afzonderlijk
 rapport is geen Wetvia-kwaliteitsmeting zolang het verschil op conceptfixtures is
 gemeten; de definitieve A/B volgt op de gereviewde evalset (issues #13, #27).
 
+## Set valideren vóór gebruik
+
+`eval/run.py validate` leest een dataset-JSONL-bestand en controleert de
+structuurregels uit `data/README.md` op regel-niveau: verplichte velden,
+categorie A–F, `verwachte_status`, gouden bronnen (`bwb_id`/`artikel`/
+`onderdeel`), ISO-peildatum, en de expliciete `concept`-vlag. De soort wordt
+automatisch afgeleid (`bench`, `ab` of `retrieval`) en kan met `--kind`
+worden vastgezet. Exitcode 1 bij fouten, zodat het in CI of een editor-hook
+kan draaien terwijl je de set schrijft.
+
+```bash
+uv run --project eval python eval/run.py validate --dataset eval/data/v0.jsonl
+```
+
+De validator kijkt alleen naar structuur; of een vraag juridisch klopt blijft
+menselijk werk (issues #13 en #26).
+
 ## Checks
 
 ```bash

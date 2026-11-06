@@ -14,7 +14,7 @@ import asyncio
 import hashlib
 import json
 import sys
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -304,8 +304,18 @@ def _run_model(
     probes: Sequence[ProbeItem],
     base_url: str,
     num_ctx: int,
+    keep_alive: str,
+    provider_factory: Callable[..., LLMProvider] = get_ollama_provider,
 ) -> ModelRun:
-    provider = get_ollama_provider(base_url=base_url, model=model, num_ctx=num_ctx, think=False)
+    """Draai één model over alle probe-items.
+
+    Standaard `keep_alive="0"`: Ollama ontlaadt het model na iedere vraag, zodat
+    op een 8 GB-GPU het volgende model niet tegen een volgebleven VRAM loopt.
+    """
+
+    provider = provider_factory(
+        base_url=base_url, model=model, num_ctx=num_ctx, keep_alive=keep_alive, think=False
+    )
     verdicts: list[ProbeVerdict] = []
     for item in probes:
         raw, error = _ask(provider, prompt_for_probe(item))
@@ -340,6 +350,7 @@ def render_report(
     when: datetime,
     base_url: str,
     num_ctx: int,
+    keep_alive: str,
     questions_path: Path,
     questions_sha256: str,
     runs: Sequence[ModelRun],
@@ -356,7 +367,8 @@ def render_report(
         "## Methode",
         "",
         f"- Endpoint: `{base_url}` via de publieke `wetvia.llm`-port, streaming, `think` uit.",
-        f"- Context: `num_ctx={num_ctx}`, temperatuur 0. Schema: dummy-`AnswerV1` (docs/02 §4).",
+        f"- Context: `num_ctx={num_ctx}`, temperatuur 0, `keep_alive={keep_alive}`; "
+        "schema: dummy-`AnswerV1` (docs/02 §4).",
         f"- Probe-set: `{questions_path}` (sha256 `{questions_sha256[:16]}…`, concept).",
         "",
         "## Drempels (docs/02 §7)",
@@ -421,6 +433,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--questions", type=Path, default=Path("eval/data/ab_kamervragen.jsonl"))
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--num-ctx", type=int, default=DEFAULT_NUM_CTX)
+    parser.add_argument(
+        "--keep-alive",
+        default="0",
+        help=(
+            "Ollama keep_alive per vraag; default '0' ontlaadt na iedere vraag "
+            "zodat op 8 GB de baseline en de LoRA nooit tegelijk in VRAM staan."
+        ),
+    )
     parser.add_argument("--out-dir", type=Path, default=Path("eval/reports"))
     try:
         args = parser.parse_args(argv)
@@ -451,8 +471,8 @@ def main(argv: list[str] | None = None) -> int:
 
     questions_sha = hashlib.sha256(args.questions.read_bytes()).hexdigest()
     runs = [
-        _run_model(args.baseline, probes, args.base_url, args.num_ctx),
-        _run_model(args.tuned, probes, args.base_url, args.num_ctx),
+        _run_model(args.baseline, probes, args.base_url, args.num_ctx, args.keep_alive),
+        _run_model(args.tuned, probes, args.base_url, args.num_ctx, args.keep_alive),
     ]
 
     now = datetime.now(UTC)
@@ -462,6 +482,7 @@ def main(argv: list[str] | None = None) -> int:
             when=now,
             base_url=args.base_url,
             num_ctx=args.num_ctx,
+            keep_alive=args.keep_alive,
             questions_path=args.questions,
             questions_sha256=questions_sha,
             runs=runs,

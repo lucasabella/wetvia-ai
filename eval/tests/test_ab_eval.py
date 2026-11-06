@@ -173,6 +173,7 @@ class TestSummarizeAndReport:
             when=datetime.now(UTC),
             base_url="http://127.0.0.1:11434",
             num_ctx=8192,
+            keep_alive="0",
             questions_path=Path("eval/data/ab_kamervragen.jsonl"),
             questions_sha256="0" * 64,
             runs=[run, run],
@@ -198,3 +199,32 @@ class TestPrompt:
             categorie="weigeren",
         )
         assert "(geen bronnen in dit item)" in prompt_for_probe(empty)
+
+
+class TestRunModel:
+    def test_provider_receives_keep_alive_en_think_uit(self) -> None:
+        """8 GB-bewaking: elke vraag moet de vorige uit VRAM laten gaan."""
+        from typing import Any
+
+        from wetvia_eval import ab_eval
+
+        captured: dict[str, Any] = {}
+
+        class FakeProvider:
+            async def chat(self, *args: object, **kw: object) -> object:
+                async def _gen() -> object:
+                    yield _answer_json()
+
+                return _gen()
+
+        def factory(**kwargs: Any) -> object:
+            captured.update(kwargs)
+            return FakeProvider()
+
+        run = ab_eval._run_model(
+            "m", [_probe()], "http://127.0.0.1:11434", 2048, "0", provider_factory=factory
+        )
+        assert captured["keep_alive"] == "0"
+        assert captured["think"] is False
+        assert run.metrics.answered_items == 1
+        assert run.metrics.schema_valid_pct == 100.0

@@ -18,3 +18,8 @@ LoRA (issue #47): twaalf synthetische kamervragen met korte bron-ID's (`s1`,
 artikelnummers of wettekst; ze meten alleen antwoordgedrag (abstentie,
 citatie-subset, peildatum). De items moeten `"concept": true` blijven tot een
 menselijke review (issue #26) ze vervangt door gereviewde vragen.
+
+Controleer nieuw werk vóór het committen met de validator
+(`uv run --project eval python eval/run.py validate --dataset <pad>`):
+die vangt ontbrekende velden, verkeerde peildata, dubbele id's en een
+ontbrekende `concept`-vlag af. De inhoudelijke controle blijft menselijk.
