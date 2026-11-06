@@ -12,6 +12,7 @@ Dit is de route om de trainingsomgeving op de eigen pc klaar te zetten. Gebruik 
    ```
 
    Herstart als Windows daarom vraagt, open Ubuntu en maak de Linux-gebruiker aan.
+
 3. In Ubuntu controleer je de GPU:
 
    ```bash
@@ -19,6 +20,7 @@ Dit is de route om de trainingsomgeving op de eigen pc klaar te zetten. Gebruik 
    ```
 
    Je moet de RTX 3070 zien met ongeveer 8 GiB geheugen. De CUDA-driver wordt door de Windows-driver geleverd; installeer geen Linux-displaydriver in WSL.
+
 4. Installeer `uv` in Ubuntu:
 
    ```bash
@@ -41,6 +43,7 @@ Dit is de route om de trainingsomgeving op de eigen pc klaar te zetten. Gebruik 
    git fetch origin feature/local-qwen35-lora-quickstart
    git switch --track origin/feature/local-qwen35-lora-quickstart
    ```
+
 6. Maak de eigen trainingsomgeving aan:
 
    ```bash
@@ -79,7 +82,25 @@ training/data/sft.jsonl
 Voor iedere regel:
 
 ```json
-{"id":"unieke-id","messages":[{"role":"system","content":"..."},{"role":"user","content":"Vraag en bronfragmenten met hun bron-ID's ..."},{"role":"assistant","content":"{\"status\":\"onzeker\",\"samenvatting\":\"...\",\"punten\":[],\"voorbehouden\":[],\"vervolgstappen\":[],\"peildatum\":\"2026-11-06\"}"}],"metadata":{"source_uris":["https://..."],"license":"CC0-1.0","negative":true}}
+{
+  "id": "unieke-id",
+  "messages": [
+    { "role": "system", "content": "..." },
+    {
+      "role": "user",
+      "content": "Vraag en bronfragmenten met hun bron-ID's ..."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"status\":\"onzeker\",\"samenvatting\":\"...\",\"punten\":[],\"voorbehouden\":[],\"vervolgstappen\":[],\"peildatum\":\"2026-11-06\"}"
+    }
+  ],
+  "metadata": {
+    "source_uris": ["https://..."],
+    "license": "CC0-1.0",
+    "negative": true
+  }
+}
 ```
 
 Dit is alleen de vorm van één voorbeeld, geen goedgekeurd trainingsvoorbeeld. De assistentinhoud moet exacte `AnswerV1`-JSON zijn en de `peildatum` moet bij de bron passen. `metadata` is voor audit en wordt niet naar het model gevoerd. Zie [DATA_CARD.template.md](DATA_CARD.template.md).

@@ -21,8 +21,8 @@ Vul dit bestand in voordat trainingsdata een run in gaat. Commit geen ruwe train
 ## Bronnen en rechten
 
 | Collectie/documentsoort | Bron-URL | Licentie | Download-/peildatum | Filters/uitsluitingen |
-|---|---|---|---|---|
-| | | | | |
+| ----------------------- | -------- | -------- | ------------------- | --------------------- |
+|                         |          |          |                     |                       |
 
 Leg per broncollectie de licentiebron en gebruiksvoorwaarden vast. Voor parlementaire stukken registreer je minimaal het document-ID, de datum en of het een voorstel, stemming, verslag of geldende regeling betreft.
 
