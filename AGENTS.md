@@ -13,6 +13,7 @@ pnpm install
 cd apps/api && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest && uv run lint-imports
 cd packages/nl-wetten-ingest && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
 cd eval && uv run ruff check && uv run ruff format --check && uv run mypy src && uv run pytest
+uv run --project eval ruff check training/ && uv run --project eval ruff format --check training/ && uv run --project eval python -m pytest training/tests -q
 pnpm lint && pnpm check && pnpm test && pnpm format:check
 
 cp .env.example .env
