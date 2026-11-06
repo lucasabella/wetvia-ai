@@ -31,7 +31,7 @@ Gebruik alleen bronnen met vastgelegde herkomst en licentie. Zie [DATA_CARD.temp
 
 ## Op de pc starten
 
-Zie [LOCAL-QUICKSTART.md](LOCAL-QUICKSTART.md) voor Windows/WSL-installatie, GPU-controle, preflight en de trainingsopdracht. De eerste stap op de pc is `--preflight-only`; dit controleert CUDA, bf16 en het model laden zonder een dataset of API-sleutel nodig te hebben.
+Zie [LOCAL-QUICKSTART.md](LOCAL-QUICKSTART.md) voor de Windows-installatie (PowerShell en Ollama, zonder WSL), GPU-controle, preflight en de trainingsopdracht. De eerste stap op de pc is `--preflight-only`; dit controleert CUDA, bf16 en het model laden zonder een dataset of API-sleutel nodig te hebben.
 
 Voor echte training zijn ook nodig:
 
