@@ -70,6 +70,30 @@ Ollama native, niet de Docker-GPU-service. `nvidia-smi` levert de VRAM-kolom (Mi
 
 Ollama via Metal. `nvidia-smi` is er niet, dus piek-VRAM blijft `niet beschikbaar`. Het script praat alleen met de Ollama HTTP-API, niet met MLX.
 
+## A/B-benchmark basismodel vs. LoRA (issue #47)
+
+`eval/run.py ab` vergelijkt twee Ollama-tags (bijvoorbeeld het basismodel en een
+geladen LoRA-GGUF) op `eval/data/ab_kamervragen.jsonl`. Deze probe-set bestaat
+uit conceptfixtures (`"concept": true` op elke regel): ze meten alleen gedrag —
+schema-validiteit, abstentie-recall, statusnauwkeurigheid, citatie-ondersteuning
+en peildatum-overeenkomst — geen juridische inhoud. De drempels (+5pp
+abstentie-recall, +3pp citatie-ondersteuning) komen uit docs/02 §7.
+
+```bash
+uv run python eval/run.py ab \
+  --baseline qwen3.5:0.8b \
+  --tuned <lora-tag> \
+  --questions eval/data/ab_kamervragen.jsonl
+```
+
+De runner wijst ontbrekende tags af in plaats van ze te skippen, want een
+A/B-vergelijking met een ontbrekend model is zinloos. Rapporten komen in
+`eval/reports/ab-<UTC-timestamp>.md` en `.json`, met per-item ruwe antwoorden
+in de JSON. Een item met een fout telt niet mee in de noemer; een cel `niet
+gemeten` betekent een lege noemer, nooit een verzonnen getal. Ieder afzonderlijk
+rapport is geen Wetvia-kwaliteitsmeting zolang het verschil op conceptfixtures is
+gemeten; de definitieve A/B volgt op de gereviewde evalset (issues #13, #27).
+
 ## Checks
 
 ```bash

@@ -11,3 +11,10 @@ Een later item vereist `id`, `vraag`, `categorie`, `verwachte_status`,
 `concept`. Golden sources noemen `bwb_id`, `artikel` en `onderdeel` (null als
 er geen onderdeel is). Conceptfixtures horen buiten deze map of moeten
 `"concept": true` markeren. Hun scores zijn geen Wetvia-kwaliteitsmeting.
+
+`ab_kamervragen.jsonl` is de concept-probe-set voor de A/B-benchmark van de
+LoRA (issue #47): twaalf synthetische kamervragen met korte bron-ID's (`s1`,
+`s2`, …) in plaats van BWB-ID's. Ze bevatten bewust geen echte kamerstuk-ID's,
+artikelnummers of wettekst; ze meten alleen antwoordgedrag (abstentie,
+citatie-subset, peildatum). De items moeten `"concept": true` blijven tot een
+menselijke review (issue #26) ze vervangt door gereviewde vragen.

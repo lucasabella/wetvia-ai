@@ -124,9 +124,18 @@ Na een geslaagde run staan alleen de LoRA-adapter, tokenizer en runmetadata in `
 ## Stap 4: lokale gebruiksproef en A/B-eval
 
 1. Bewaar de adapter samen met het exacte basismodel-ID, dataset-hash en chat-template.
-2. Exporteer naar GGUF met Unsloth (`save_pretrained_gguf`, `q4_k_m`) en laad hem in Ollama volgens de [Unsloth-exportgids](https://unsloth.ai/docs/models/qwen3.5/fine-tune). Controleer dat de chat-template en end-of-turn-tokens hetzelfde blijven.
-3. Vergelijk baseline en LoRA op dezelfde, nooit getrainde eval-items. Gebruik Wetvia’s doelen uit `docs/02-ai-architectuur.md`: abstentie-recall +5 procentpunt of citatie-ondersteuning +3 procentpunt, zonder daling in kernfeit-correctheid.
-4. Zet de LoRA niet standaard aan als die drempels niet haalt.
+2. Exporteer naar GGUF met Unsloth (`save_pretrained_gguf`, `q4_k_m`) en laad hem in Ollama volgens de [Unsloth-exportgids](https://unsloth.ai/docs/models/qwen3.5/fine-tune). Controleer dat de chat-template en end-of-turn-tokens hetzelfde blijven (doe dat in Ollama met een aparte tag, bijvoorbeeld `qwen35-lora-0.8b:latest`).
+3. Vergelijk baseline en LoRA op dezelfde, nooit getrainde eval-items:
+
+   ```bash
+   uv run --project eval python eval/run.py ab \
+     --baseline qwen3.5:0.8b \
+     --tuned qwen35-lora-0.8b:latest
+   ```
+
+   De concept-probe-set `eval/data/ab_kamervragen.jsonl` meet alleen gedrag (abstentie en citatievorm), geen juridische inhoud en is géén Wetvia-kwaliteitsmeting. De drempels doen er pas toe zodra de gereviewde evalset er is (issues #13 en #27); totdat die er is, bewijst een groen rapport alleen dat de trainingspipeline werken is.
+
+4. Zet de LoRA niet standaard aan als de drempels uit `docs/02-ai-architectuur.md` (abstentie-recall +5pp of citatie-ondersteuning +3pp, zonder daling in kernfeit-correctheid) op de gereviewde set niet gehaald worden.
 
 ## Als iets faalt
 
