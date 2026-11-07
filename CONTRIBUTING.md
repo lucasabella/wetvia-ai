@@ -2,7 +2,7 @@
 
 Wetvia is een monorepo: `apps/api` (FastAPI, AGPL-3.0-only), `apps/web` (frontend, AGPL-3.0-only; SvelteKit volgt), `packages/nl-wetten-ingest` (Apache-2.0) en `eval/` (de evaluatieset is CC BY 4.0).
 
-Werk op een branch vanaf `main`. Push niet naar `main` en merge je eigen PR niet.
+Werk op een branch vanaf `main`. Push niet rechtstreeks naar `main`; merge via een PR. Een PR die klaar is — CI groen en de acceptatiecriteria van het issue gehaald — mag gemerged worden, ook door een coding agent die zijn eigen werk mergt. Wat niet klaar is gaat terug naar de implementer.
 
 ## Geen bron, geen claim
 
