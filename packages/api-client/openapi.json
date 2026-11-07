@@ -374,6 +374,31 @@
         "title": "ConfiguredChatModes",
         "type": "object"
       },
+      "DakkapelDossierRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "invoer": {
+            "$ref": "#/components/schemas/DakkapelRuleRequest"
+          },
+          "locatie": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locatie"
+          }
+        },
+        "required": [
+          "invoer"
+        ],
+        "title": "DakkapelDossierRequest",
+        "type": "object"
+      },
       "DakkapelRuleRequest": {
         "additionalProperties": false,
         "description": "Complete input for one Bbl dakkapel check.\n\nMeasurements are canonical, non-negative decimal strings. The browser may\naccept a localized comma, but sends the normalized dot-decimal form here.",
@@ -545,6 +570,16 @@
           "onbekend"
         ],
         "title": "Dakvlak",
+        "type": "string"
+      },
+      "DossierFormat": {
+        "description": "Supported attachment format values.",
+        "enum": [
+          "docx",
+          "pdf",
+          "md"
+        ],
+        "title": "DossierFormat",
         "type": "string"
       },
       "EisCode": {
@@ -1064,6 +1099,73 @@
         "summary": "Chat",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/dossier/dakkapel": {
+      "post": {
+        "operationId": "generate_dakkapel_dossier_api_dossier_dakkapel_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/DossierFormat"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DakkapelDossierRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "text/markdown": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Generated concept dossier attachment."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "The local dossier description provider is unavailable."
+          }
+        },
+        "summary": "Generate Dakkapel Dossier",
+        "tags": [
+          "dossier"
         ]
       }
     },

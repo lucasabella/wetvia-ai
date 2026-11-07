@@ -24,6 +24,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dossier/dakkapel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Dakkapel Dossier */
+        post: operations["generate_dakkapel_dossier_api_dossier_dakkapel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -253,6 +270,12 @@ export interface components {
             /** Local */
             local: boolean;
         };
+        /** DakkapelDossierRequest */
+        DakkapelDossierRequest: {
+            invoer: components["schemas"]["DakkapelRuleRequest"];
+            /** Locatie */
+            locatie?: string | null;
+        };
         /**
          * DakkapelRuleRequest
          * @description Complete input for one Bbl dakkapel check.
@@ -298,6 +321,12 @@ export interface components {
          * @enum {string}
          */
         Dakvlak: "achterdakvlak" | "zijdakvlak" | "ander_dakvlak" | "onbekend";
+        /**
+         * DossierFormat
+         * @description Supported attachment format values.
+         * @enum {string}
+         */
+        DossierFormat: "docx" | "pdf" | "md";
         /**
          * EisCode
          * @enum {string}
@@ -513,6 +542,50 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    generate_dakkapel_dossier_api_dossier_dakkapel_post: {
+        parameters: {
+            query: {
+                format: components["schemas"]["DossierFormat"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DakkapelDossierRequest"];
+            };
+        };
+        responses: {
+            /** @description Generated concept dossier attachment. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "text/markdown": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The local dossier description provider is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

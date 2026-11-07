@@ -11,7 +11,13 @@ from pydantic import TypeAdapter
 
 from wetvia.answer import AnswerPipeline
 from wetvia.api.deps import HealthContext
-from wetvia.api.routes import chat_router, health_router, rules_router, search_router
+from wetvia.api.routes import (
+    chat_router,
+    dossier_router,
+    health_router,
+    rules_router,
+    search_router,
+)
 from wetvia.api.schemas.chat import (
     ChatAnswerEvent,
     ChatDoneEvent,
@@ -20,6 +26,7 @@ from wetvia.api.schemas.chat import (
     ChatMode,
     ChatSourcesEvent,
 )
+from wetvia.dossier import DakkapelDossierService
 from wetvia.retrieval import Retriever
 
 
@@ -28,6 +35,7 @@ def create_app(
     *,
     retriever: Retriever | None = None,
     answer_pipelines: Mapping[ChatMode, AnswerPipeline] | None = None,
+    dossier_service: DakkapelDossierService | None = None,
     shutdown: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -47,9 +55,11 @@ def create_app(
     app.state.health_context = context
     app.state.retriever = retriever
     app.state.answer_pipelines = MappingProxyType(dict(answer_pipelines or {}))
+    app.state.dossier_service = dossier_service
     app.include_router(health_router)
     app.include_router(search_router)
     app.include_router(rules_router)
+    app.include_router(dossier_router)
     app.include_router(chat_router)
 
     def custom_openapi() -> dict[str, Any]:

@@ -12,6 +12,7 @@ from wetvia.api.schemas.chat import (
     ChatSourceCard,
     ChatSourcesEvent,
 )
+from wetvia.api.schemas.dossier import DakkapelDossierRequest
 from wetvia.api.schemas.health import ConfiguredChatModes, HealthResponse
 from wetvia.api.schemas.rules import (
     ActiviteitResultaatResponse,
@@ -41,6 +42,7 @@ __all__ = [
     "ChatSourceCard",
     "ChatSourcesEvent",
     "ConfiguredChatModes",
+    "DakkapelDossierRequest",
     "DakkapelRuleRequest",
     "DakkapelRuleResponse",
     "EisResultaatResponse",

@@ -92,9 +92,9 @@ test("dakkapel wizard keeps input through steps and shows sourced rule results",
       "Dit is een concept, gemaakt met AI. Laat het controleren voordat u het indient.",
     ),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /download|pdf|docx/i }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /download als/i })).toHaveCount(
+    3,
+  );
   await expect(page.getByText("Adres: Teststraat 1, Utrecht")).toBeVisible();
   await expectAxeClear(page);
 
@@ -251,6 +251,88 @@ test("dossier navigation is in the sidebar and wizard state is not persisted", a
   await expect(page.getByLabel("Adres (alleen voor dit concept)")).toHaveValue(
     "",
   );
+  await expectAxeClear(page);
+});
+
+test("concept downloads send the typed dossier input and announce loading and errors", async ({
+  page,
+}) => {
+  await openDakkapelWizard(page);
+  await page
+    .getByLabel("Adres (alleen voor dit concept)")
+    .fill("Voorbeeldstraat 4");
+  await page.getByRole("button", { name: "Volgende: Dakvlak" }).click();
+  await page.getByRole("button", { name: "Achterzijde kiezen" }).click();
+  await page.getByRole("button", { name: "Volgende: Maten" }).click();
+  await page.getByLabel("Hoogte vanaf de voet (m)").fill("1,75");
+  await page.getByRole("button", { name: "Volgende: Resultaat" }).click();
+  await page.getByRole("button", { name: "Volgende: Conceptdossier" }).click();
+  await expect(
+    page.getByText("Onderzijde boven de dakvoet: Niet ingevuld", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText(/Niet ingevuld m/)).toHaveCount(0);
+
+  const dossierRequests: Array<{
+    format: string | null;
+    body: { locatie: string | null; invoer: DakkapelRuleRequest };
+  }> = [];
+  await page.route("**/api/dossier/dakkapel**", async (route) => {
+    const url = new URL(route.request().url());
+    dossierRequests.push({
+      format: url.searchParams.get("format"),
+      body: route.request().postDataJSON() as {
+        locatie: string | null;
+        invoer: DakkapelRuleRequest;
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    if (url.searchParams.get("format") === "md") {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/markdown; charset=utf-8",
+        headers: { "content-disposition": 'attachment; filename="test.md"' },
+        body: "# CONCEPT\n\nFixture attachment.",
+      });
+    } else {
+      await route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "The concept dossier could not be generated.",
+        }),
+      });
+    }
+  });
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download als Markdown" }).click();
+  await expect(
+    page.getByText("Het conceptbestand wordt gemaakt…", { exact: true }),
+  ).toBeVisible();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("wetvia-dakkapel-concept.md");
+  await expect(
+    page.getByText("De download is gestart.", { exact: true }),
+  ).toBeVisible();
+  expect(dossierRequests[0]).toMatchObject({
+    format: "md",
+    body: {
+      locatie: "Voorbeeldstraat 4",
+      invoer: { dakvlak: "achterdakvlak", hoogte_m: "1.75" },
+    },
+  });
+  await expectAxeClear(page);
+
+  await page.getByRole("button", { name: "Download als PDF" }).click();
+  await expect(
+    page.getByText("Het conceptbestand wordt gemaakt…", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText(
+    "Het conceptbestand kon niet worden gemaakt.",
+  );
+  expect(dossierRequests[1]?.format).toBe("pdf");
   await expectAxeClear(page);
 });
 

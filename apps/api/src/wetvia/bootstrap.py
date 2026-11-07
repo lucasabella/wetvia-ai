@@ -21,6 +21,7 @@ from wetvia.cli import build_cli
 from wetvia.config import Settings
 from wetvia.db import create_db_engine, create_session_factory, database_status
 from wetvia.db.engine import DbStatus
+from wetvia.dossier import DakkapelDossierService
 from wetvia.embeddings.adapters.sentence_transformers import SentenceTransformersEmbedder
 from wetvia.ingest import EmbeddingJob, IngestService
 from wetvia.llm.adapters.ollama import OllamaProvider
@@ -241,10 +242,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
         for mode, provider in providers.items()
     }
+    local_provider = providers.get("local")
+    dossier_service = DakkapelDossierService(local_provider) if local_provider is not None else None
     app = create_app(
         context,
         retriever=retriever,
         answer_pipelines=answer_pipelines,
+        dossier_service=dossier_service,
         shutdown=shutdown,
     )
     app.state.session_factory = sessions
