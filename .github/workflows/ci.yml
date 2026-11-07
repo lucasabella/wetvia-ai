@@ -164,3 +164,34 @@ jobs:
       - name: Pytest
         working-directory: eval
         run: uv run pytest
+
+  training:
+    name: training
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.12"
+          cache-dependency-glob: uv.lock
+
+      - name: Sync
+        run: uv sync --locked --all-packages --all-groups
+
+      - name: Ruff
+        run: |
+          uv run --project eval ruff check training/
+          uv run --project eval ruff format --check training/
+
+      - name: Unit tests
+        run: uv run --project eval python -m pytest training/tests -q
+
+      - name: Compile check
+        run: |
+          uv run --project eval python -m py_compile training/train_qwen35_lora.py
+          uv run --project eval python -m py_compile training/answer_v1.py
+          uv run --project eval python -m py_compile training/generate_sft.py

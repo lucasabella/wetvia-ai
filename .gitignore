@@ -22,6 +22,10 @@ venv/
 *.pem
 *.key
 
-# Model weights and local data (root only; eval/data/ stays tracked)
+# Model weights and local training data; eval/data/ stays tracked
 *.gguf
 /data/
+/training/data/*
+!/training/data/README.md
+/training/output/
+/training/.cache/
