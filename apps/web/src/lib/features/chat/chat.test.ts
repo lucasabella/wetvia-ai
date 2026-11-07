@@ -298,6 +298,41 @@ describe("ChatStore", () => {
     expect(calls).toBe(1);
     expect(chat.turns).toHaveLength(1);
   });
+
+  it("keeps a failed-to-persist conversation in memory without a phantom active id or repeated storage errors", async () => {
+    const repository = new CreateFailingRepository();
+    const history = new ConversationHistoryStore(repository);
+    const sources = new SourcesStore();
+    const sourceCard = syntheticSource();
+    const answer = syntheticAnswer([chunkId]);
+    const chat = new ChatStore(
+      async function* (): AsyncGenerator<ChatEvent> {
+        yield { type: "sources", sources: [sourceCard] };
+        yield { type: "answer", answer };
+        yield { type: "done" };
+      },
+      sources,
+      history,
+    );
+    await chat.hydrate();
+
+    await chat.submit("Synthetic question when storage is unavailable?");
+
+    expect(chat.turns).toHaveLength(1);
+    expect(chat.turns[0]).toMatchObject({
+      question: "Synthetic question when storage is unavailable?",
+      status: "answered",
+      sources: [sourceCard],
+      answer,
+    });
+    expect(sources.items).toEqual([sourceCard]);
+    expect(chat.activeConversationId).toBeNull();
+    expect(history.conversations).toEqual([]);
+    expect(repository.updateCalls).toBe(0);
+    expect(chat.notice).toBe(
+      "De lokale gespreksopslag kon niet worden bijgewerkt.",
+    );
+  });
 });
 
 describe("chat display helpers", () => {
@@ -416,6 +451,22 @@ class MemoryConversationRepository implements ConversationRepository {
 
   async clear(): Promise<void> {
     this.rows.clear();
+  }
+}
+
+class CreateFailingRepository extends MemoryConversationRepository {
+  updateCalls = 0;
+
+  override async create(): Promise<void> {
+    throw new Error("Synthetic storage failure");
+  }
+
+  override async update(
+    id: string,
+    patch: ConversationPatch,
+  ): Promise<StoredConversation> {
+    this.updateCalls += 1;
+    return super.update(id, patch);
   }
 }
 

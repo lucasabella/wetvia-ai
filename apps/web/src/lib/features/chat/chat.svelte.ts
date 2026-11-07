@@ -194,13 +194,14 @@ export class ChatStore {
         await this.history.delete(conversation.id);
         return;
       }
-      if (!result.persisted) {
+      this.activeMode = conversation.mode;
+      if (result.persisted) {
+        conversationId = conversation.id;
+        this.history.setActive(conversationId);
+        createdConversation = true;
+      } else {
         this.notice = this.history.storageError;
       }
-      conversationId = conversation.id;
-      this.history.setActive(conversationId);
-      this.activeMode = conversation.mode;
-      createdConversation = true;
       this.turns.push(turn);
     } else {
       this.turns.push(turn);
@@ -322,7 +323,10 @@ export class ChatStore {
     this.sending = false;
   }
 
-  private async persistConversation(id: string): Promise<void> {
+  private async persistConversation(id: string | null): Promise<void> {
+    if (!id) {
+      return;
+    }
     const snapshot = $state.snapshot(this.turns) as ChatTurn[];
     const messages = snapshot.map((turn) => ({
       ...turn,
