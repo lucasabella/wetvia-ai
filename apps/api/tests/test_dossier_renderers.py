@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import date
 from decimal import Decimal
 from importlib.resources import files
@@ -24,6 +23,15 @@ from wetvia.rules import DakkapelInvoer, Dakvlak, Gebiedsbescherming, Monumentre
 _SNAPSHOT = Path(__file__).parent / "fixtures" / "dossier" / "dakkapel.md"
 _CUSTOM_PROPERTIES_NS = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
 _VARIANTS_NS = "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"
+
+
+class CopyProvider(FakeProvider):
+    def __init__(self) -> None:
+        super().__init__([])
+
+    async def chat(self, messages, schema, stream, temperature, **kwargs):
+        self.calls.append((messages, schema, stream, temperature))
+        return schema(projectomschrijving=messages[-1]["content"])
 
 
 def _facts(*, measurements: bool = True, unknown_context: bool = False) -> DakkapelInvoer:
@@ -53,15 +61,17 @@ def _dossier(
     unknown_context: bool = False,
 ):
     async def create():
-        provider = FakeProvider([json.dumps({"projectomschrijving": description})])
         service = DakkapelDossierService(
-            provider,
+            CopyProvider(),
             today=lambda: date(2026, 11, 1),
         )
-        return await service.create(
+        dossier = await service.create(
             _facts(measurements=measurements, unknown_context=unknown_context),
             location=location,
         )
+        if description != "Plaatsen van een dakkapel aan de achterzijde.":
+            return dossier.model_copy(update={"projectomschrijving": description})
+        return dossier
 
     return asyncio.run(create())
 
@@ -103,12 +113,16 @@ def test_docx_is_a_real_watermarked_artifact_with_ooxml_ai_properties() -> None:
         header = archive.read("word/header1.xml").decode("utf-8")
         document_xml = archive.read("word/document.xml").decode("utf-8")
         custom_xml = ET.fromstring(archive.read("docProps/custom.xml"))
+        app_xml = ET.fromstring(archive.read("docProps/app.xml"))
         content_types = archive.read("[Content_Types].xml").decode("utf-8")
         relationships = archive.read("_rels/.rels").decode("utf-8")
 
+    app_ns = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+    application = app_xml.find(f"{{{app_ns}}}Application")
+    assert application is not None and application.text == "Wetvia-AI"
     assert "rotation:315" in header
     assert 'string="CONCEPT"' in header
-    assert "Projectomschrijving" in document_xml or "Plaatsen van een dakkapel" in document_xml
+    assert "Volgens de opgegeven gegevens" in document_xml
     assert "/docProps/custom.xml" in content_types
     assert "custom-properties" in relationships
     properties = {
@@ -189,3 +203,29 @@ def test_pdf_autoescapes_user_content_and_does_not_fetch_resources(monkeypatch) 
     assert hostile in text
     assert "<script>alert('x')</script>" in text
     assert fetches == []
+
+
+def test_canonical_description_survives_all_renderers() -> None:
+    from dataclasses import replace
+
+    async def create(height: Decimal | None):
+        facts = replace(_facts(measurements=False, unknown_context=True), hoogte_m=height)
+        return await DakkapelDossierService(CopyProvider()).create(facts, location=None)
+
+    for height, expected, invented in (
+        (Decimal("1.2"), "Hoogte: 1.2 m", "2.5 m"),
+        (None, "Hoogte: onbekend", "1.75 m"),
+    ):
+        dossier = asyncio.run(create(height))
+        markdown = render_markdown(dossier)
+        docx = Document(BytesIO(render_docx(dossier)))
+        docx_text = "\n".join(p.text for p in docx.paragraphs)
+        pdf = PdfReader(BytesIO(render_pdf(dossier)))
+        pdf_text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        assert invented not in dossier.projectomschrijving
+        for text in (markdown, docx_text, pdf_text):
+            assert expected in text
+            assert "Volgens de opgegeven gegevens" in text
+            assert "Verzonnenstraat" not in text
+            assert "houten dakkapel" not in text
+            assert "vergunning is verleend" not in text

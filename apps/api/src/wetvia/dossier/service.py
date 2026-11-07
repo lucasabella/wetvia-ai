@@ -1,4 +1,4 @@
-"""Dakkapel dossier generation using the public rules result and injected local LLM."""
+"""Dakkapel dossier generation with an exactly verified local LLM description."""
 
 import asyncio
 from collections.abc import Callable
@@ -11,13 +11,10 @@ from wetvia.dossier.schema import DossierV1, ProjectomschrijvingV1
 from wetvia.llm import ChatMessage, LLMProvider
 from wetvia.rules import Bronverwijzing, DakkapelInvoer, Toetsresultaat, toets
 
-_SYSTEM_PROMPT = """\
-Schrijf in het Nederlands op B1-niveau alleen de projectomschrijving van een
-conceptdossier. Beschrijf de voorgenomen werkzaamheden uitsluitend met de
-feiten uit de invoer. Verzin geen ontbrekende maten, adres, aanvragergegevens,
-bronnen of juridische conclusies. Beoordeel niet of een vergunning nodig is.
-Noem geen adres of persoonsgegevens. Houd de omschrijving onder 120 woorden.
-"""
+_SYSTEM_PROMPT = (
+    "Kopieer de opgegeven projectomschrijving exact in het veld projectomschrijving. "
+    "Wijzig, voeg toe of verwijder geen tekst."
+)
 
 _ROOF_LABELS = {
     "achterdakvlak": "het achterdakvlak",
@@ -56,7 +53,7 @@ class DossierFormat(StrEnum):
 
 
 class DakkapelDossierService:
-    """Create a concept dossier; only its short project text uses the injected LLM."""
+    """Create a concept dossier from supplied facts and an injected local provider."""
 
     def __init__(
         self,
@@ -73,7 +70,7 @@ class DakkapelDossierService:
         *,
         location: str | None,
     ) -> DossierV1:
-        """Build the structured dossier, omitting the address from the LLM prompt."""
+        """Build the structured dossier from the supplied facts."""
         result = toets(input)
         description = await self._projectomschrijving(input)
         normalized_location = (
@@ -124,22 +121,22 @@ class DakkapelDossierService:
         raise ValueError(f"Unsupported dossier format: {format}")
 
     async def _projectomschrijving(self, input: DakkapelInvoer) -> ProjectomschrijvingV1:
+        canonical = _projectomschrijving(input)
         messages: list[ChatMessage] = [
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": _facts_for_prompt(input)},
+            {"role": "user", "content": canonical.projectomschrijving},
         ]
         output = await self.description_provider.chat(
-            messages,
-            schema=ProjectomschrijvingV1,
-            stream=False,
-            temperature=0.2,
+            messages, schema=ProjectomschrijvingV1, stream=False, temperature=0.0
         )
         if not isinstance(output, ProjectomschrijvingV1):
             raise TypeError("the dossier description provider did not return the schema model")
+        if output.projectomschrijving != canonical.projectomschrijving:
+            raise ValueError("the dossier description differs from the supplied facts")
         return output
 
 
-def _facts_for_prompt(input: DakkapelInvoer) -> str:
+def _projectomschrijving(input: DakkapelInvoer) -> ProjectomschrijvingV1:
     measurements: tuple[tuple[str, Decimal | None], ...] = (
         ("hoogte", input.hoogte_m),
         ("afstand onderzijde tot dakvoet", input.onderzijde_boven_dakvoet_m),
@@ -147,21 +144,21 @@ def _facts_for_prompt(input: DakkapelInvoer) -> str:
         ("afstand linkerzijde tot dakvlakrand", input.linker_zijkant_tot_dakvlakrand_m),
         ("afstand rechterzijde tot dakvlakrand", input.rechter_zijkant_tot_dakvlakrand_m),
     )
-    lines = [
-        "Voorgenomen activiteit: plaatsen van een dakkapel.",
-        f"Dakvlak: {_ROOF_LABELS[input.dakvlak.value]}.",
+    facts = [
+        f"Volgens de opgegeven gegevens komt een dakkapel op {_ROOF_LABELS[input.dakvlak.value]}.",
         f"Plat dak: {_yes_no_unknown(input.plat_dak)}.",
+        "Dakvlak naar openbaar toegankelijk gebied: "
+        f"{_yes_no_unknown(input.dakvlak_naar_openbaar_toegankelijk_gebied)}.",
         f"Monumentrelatie: {_MONUMENT_LABELS[input.monumentrelatie.value]}.",
         f"Gebiedsbescherming: {_AREA_LABELS[input.gebiedsbescherming.value]}.",
     ]
-    if input.dakvlak_naar_openbaar_toegankelijk_gebied is not None:
-        lines.append(
-            "Dakvlak naar openbaar toegankelijk gebied: "
-            f"{_yes_no_unknown(input.dakvlak_naar_openbaar_toegankelijk_gebied)}."
-        )
-    for label, value in measurements:
-        lines.append(f"{label}: {value} m." if value is not None else f"{label}: onbekend.")
-    return "\n".join(lines)
+    facts.extend(
+        f"{label.capitalize()}: {value} m."
+        if value is not None
+        else f"{label.capitalize()}: onbekend."
+        for label, value in measurements
+    )
+    return ProjectomschrijvingV1(projectomschrijving=" ".join(facts))
 
 
 def _yes_no_unknown(value: bool | None) -> str:

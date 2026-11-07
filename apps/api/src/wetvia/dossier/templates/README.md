@@ -5,7 +5,7 @@ images, fonts, or URL references; the renderer also rejects all URL fetching.
 
 The DOCX OOXML core-properties schema has no `generator` property. The
 renderer records `Wetvia-AI` in the standard core `creator` and
-`lastModifiedBy` fields and writes the custom properties `generator=Wetvia-AI`
+`lastModifiedBy` fields, sets `Application=Wetvia-AI` in `docProps/app.xml`, and writes the custom properties `generator=Wetvia-AI`
 and `ai_generated=true` in `docProps/custom.xml`. PDF Info metadata uses
 `/Producer=Wetvia-AI`; XMP carries `wetvia:generator` and
 `wetvia:ai_generated` in the `https://wetvia.ai/ns/1.0/` namespace.

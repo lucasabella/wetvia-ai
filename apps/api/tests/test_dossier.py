@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -27,6 +28,7 @@ from wetvia.dossier import (
     DossierV1,
     ProjectomschrijvingV1,
 )
+from wetvia.dossier.service import _projectomschrijving
 from wetvia.llm.adapters.fake import FakeProvider
 from wetvia.rules import (
     DakkapelInvoer,
@@ -36,6 +38,15 @@ from wetvia.rules import (
     Oordeel,
     toets,
 )
+
+
+class CopyProvider(FakeProvider):
+    def __init__(self) -> None:
+        super().__init__([])
+
+    async def chat(self, messages, schema, stream, temperature, **kwargs):
+        self.calls.append((messages, schema, stream, temperature))
+        return schema(projectomschrijving=messages[-1]["content"])
 
 
 def _facts() -> DakkapelInvoer:
@@ -51,10 +62,6 @@ def _facts() -> DakkapelInvoer:
         monumentrelatie=Monumentrelatie.GEEN_MONUMENT,
         gebiedsbescherming=Gebiedsbescherming.GEEN,
     )
-
-
-def _provider(description: str = "Plaatsen van een dakkapel aan de achterzijde.") -> FakeProvider:
-    return FakeProvider([json.dumps({"projectomschrijving": description})])
 
 
 def _body(**updates: Any) -> dict[str, Any]:
@@ -80,7 +87,7 @@ def _body(**updates: Any) -> dict[str, Any]:
 def test_dossier_schema_keeps_canonical_input_result_sources_and_empty_dso_state() -> None:
     async def create() -> DossierV1:
         service = DakkapelDossierService(
-            _provider(),
+            CopyProvider(),
             today=lambda: date(2026, 11, 1),
         )
         return await service.create(_facts(), location="Voorbeeldstraat 4")
@@ -106,43 +113,134 @@ def test_dossier_schema_keeps_canonical_input_result_sources_and_empty_dso_state
     assert any("DSO-LV-lijst" in item for item in dossier.open_vragen)
 
 
-def test_local_description_prompt_excludes_address_and_cloud_provider() -> None:
-    local = _provider()
-    cloud = FakeProvider([])
+def test_description_uses_only_canonical_facts() -> None:
+    async def create(facts: DakkapelInvoer) -> DossierV1:
+        return await DakkapelDossierService(CopyProvider()).create(
+            facts, location="SECRET-PRIVATE-ADDRESS"
+        )
 
-    async def build_app_and_create() -> DossierV1:
-        class Engine:
-            async def dispose(self) -> None:
-                return None
+    known = asyncio.run(create(replace(_facts(), hoogte_m=Decimal("1.2"))))
+    unknown = asyncio.run(create(replace(_facts(), hoogte_m=None)))
+    assert "Hoogte: 1.2 m" in known.projectomschrijving
+    assert "2.5" not in known.projectomschrijving
+    assert "Hoogte: onbekend" in unknown.projectomschrijving
+    assert "1.75" not in unknown.projectomschrijving
+    for dossier in (known, unknown):
+        assert "Volgens de opgegeven gegevens" in dossier.projectomschrijving
+        assert "SECRET-PRIVATE-ADDRESS" not in dossier.projectomschrijving
+        assert "materiaal" not in dossier.projectomschrijving.lower()
+        assert "vergunning" not in dossier.projectomschrijving.lower()
+        assert len(dossier.projectomschrijving.split()) <= 120
 
-        engine = Engine()
-        monkeypatch_values = {
-            "create_db_engine": lambda _url: engine,
-            "create_session_factory": lambda _engine: object(),
-            "PgHybridRetriever": lambda *_args: object(),
-            "get_chat_providers": lambda _settings: {"local": local, "cloud": cloud},
-        }
-        old_values = {name: getattr(bootstrap, name) for name in monkeypatch_values}
-        try:
-            for name, value in monkeypatch_values.items():
-                setattr(bootstrap, name, value)
-            app = bootstrap.build_app(Settings(_env_file=None))
-            service: DakkapelDossierService = app.state.dossier_service
-            assert service.description_provider is local
-            return await service.create(_facts(), location="SECRET-PRIVATE-ADDRESS")
-        finally:
-            for name, value in old_values.items():
-                setattr(bootstrap, name, value)
 
-    dossier = asyncio.run(build_app_and_create())
-    messages, schema, stream, temperature = local.calls[0]
-    prompt = "\n".join(message["content"] for message in messages)
-    assert schema is ProjectomschrijvingV1
-    assert stream is False
-    assert temperature == 0.2
-    assert "SECRET-PRIVATE-ADDRESS" not in prompt
-    assert dossier.locatie == "SECRET-PRIVATE-ADDRESS"
+def test_bootstrap_uses_local_provider_and_prompt_excludes_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Engine:
+        async def dispose(self) -> None:
+            return None
+
+    local = CopyProvider()
+    cloud = CopyProvider()
+    monkeypatch.setattr(bootstrap, "create_db_engine", lambda _url: Engine())
+    monkeypatch.setattr(bootstrap, "create_session_factory", lambda _engine: object())
+    monkeypatch.setattr(bootstrap, "PgHybridRetriever", lambda *_args: object())
+    monkeypatch.setattr(
+        bootstrap, "get_chat_providers", lambda _settings: {"local": local, "cloud": cloud}
+    )
+    service = bootstrap.build_app(Settings(_env_file=None)).state.dossier_service
+    assert service.description_provider is local
+    asyncio.run(service.create(_facts(), location="SECRET-PRIVATE-ADDRESS"))
+    assert "SECRET-PRIVATE-ADDRESS" not in str(local.calls[0][0])
     assert cloud.calls == []
+
+
+@pytest.mark.parametrize(
+    ("height", "old", "new"),
+    [
+        (Decimal("1.2"), "Hoogte: 1.2 m", "Hoogte: 2.5 m"),
+        (None, "Hoogte: onbekend", "Hoogte: 1.75 m"),
+        (None, "het achterdakvlak", "een zijdakvlak"),
+        (None, "Plat dak: ja", "Plat dak: nee"),
+        (None, "Hoogte: onbekend.", ""),
+        (None, "Hoogte: onbekend.", "Hoogte: onbekend. Adres: Verzonnenstraat 1."),
+        (None, "Hoogte: onbekend.", "Hoogte: onbekend. De dakkapel is van hout."),
+        (None, "Hoogte: onbekend.", "Hoogte: onbekend. De vergunning is verleend."),
+    ],
+)
+def test_model_deviations_fail_closed(height, old, new) -> None:
+    facts = replace(_facts(), hoogte_m=height)
+    canonical = _projectomschrijving(facts).projectomschrijving
+    assert old in canonical
+    response = json.dumps({"projectomschrijving": canonical.replace(old, new)})
+    provider = FakeProvider([response])
+    service = DakkapelDossierService(provider)
+    with pytest.raises(ValueError, match="differs"):
+        asyncio.run(service.create(facts, location="SECRET-PRIVATE-ADDRESS"))
+    assert len(provider.calls) == 1
+
+
+def test_model_deviation_returns_generic_502(caplog: pytest.LogCaptureFixture) -> None:
+    canonical = _projectomschrijving(_facts()).projectomschrijving
+    provider = FakeProvider([json.dumps({"projectomschrijving": canonical + " Verzonnenstraat."})])
+
+    async def check_db() -> DbStatus:
+        return "ok"
+
+    app = create_app(
+        HealthContext(version="test", check_db=check_db),
+        dossier_service=DakkapelDossierService(provider),
+    )
+
+    async def send() -> httpx.Response:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            return await client.post("/api/dossier/dakkapel?format=md", json=_body())
+
+    response = asyncio.run(send())
+    assert response.status_code == 502
+    assert response.json() == {"detail": "The concept dossier could not be generated."}
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert record.name == "wetvia.api.routes.dossier"
+    assert record.getMessage() == "Concept dossier generation failed (exception_type=ValueError)"
+    assert record.exc_info is None
+
+
+def test_provider_failure_log_excludes_exception_and_location(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sentinel = "SENTINEL-PRIVATE-ADDRESS"
+
+    class FailingProvider(CopyProvider):
+        async def chat(self, messages, schema, stream, temperature, **kwargs):
+            raise RuntimeError(f"provider returned private data: {sentinel}")
+
+    async def check_db() -> DbStatus:
+        return "ok"
+
+    app = create_app(
+        HealthContext(version="test", check_db=check_db),
+        dossier_service=DakkapelDossierService(FailingProvider()),
+    )
+
+    async def send() -> httpx.Response:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            return await client.post(
+                "/api/dossier/dakkapel?format=md", json=_body(locatie=sentinel)
+            )
+
+    response = asyncio.run(send())
+    assert response.status_code == 502
+    assert response.json() == {"detail": "The concept dossier could not be generated."}
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert record.getMessage() == "Concept dossier generation failed (exception_type=RuntimeError)"
+    assert record.exc_info is None
+    assert sentinel not in caplog.text
 
 
 def test_dossier_project_description_is_limited_to_120_words() -> None:
@@ -165,7 +263,7 @@ def test_dossier_rendering_runs_off_the_async_event_loop_thread(
     monkeypatch.setattr(md, "render_markdown", render_in_thread)
 
     async def create_attachment() -> bytes:
-        service = DakkapelDossierService(_provider())
+        service = DakkapelDossierService(CopyProvider())
         attachment = await service.create_attachment(
             _facts(),
             location="Voorbeeldstraat 4",
@@ -178,9 +276,7 @@ def test_dossier_rendering_runs_off_the_async_event_loop_thread(
 
 
 def test_attachment_endpoint_returns_typed_download_and_rejects_client_results() -> None:
-    description = json.dumps({"projectomschrijving": "Plaatsen van een dakkapel."})
-    provider = FakeProvider([description, description, description])
-    service = DakkapelDossierService(provider, today=lambda: date(2026, 11, 1))
+    service = DakkapelDossierService(CopyProvider(), today=lambda: date(2026, 11, 1))
 
     async def check_db() -> DbStatus:
         return "ok"
@@ -253,10 +349,9 @@ def test_attachment_endpoint_returns_typed_download_and_rejects_client_results()
     assert pdf_response.content.startswith(b"%PDF-")
     assert invalid_response.status_code == 422
     assert result_injection_response.status_code == 422
-    assert "Voorbeeldstraat 4" not in provider.calls[0][0][1]["content"]
 
 
-def test_attachment_endpoint_requires_local_dossier_service() -> None:
+def test_attachment_endpoint_requires_dossier_service() -> None:
     async def check_db() -> DbStatus:
         return "ok"
 
@@ -269,27 +364,6 @@ def test_attachment_endpoint_requires_local_dossier_service() -> None:
 
     response = asyncio.run(send())
     assert response.status_code == 503
-
-
-def test_attachment_endpoint_hides_local_provider_failure() -> None:
-    service = DakkapelDossierService(FakeProvider([]))
-
-    async def check_db() -> DbStatus:
-        return "ok"
-
-    app = create_app(
-        HealthContext(version="test", check_db=check_db),
-        dossier_service=service,
-    )
-    transport = httpx.ASGITransport(app=app)
-
-    async def send() -> httpx.Response:
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            return await client.post("/api/dossier/dakkapel?format=md", json=_body())
-
-    response = asyncio.run(send())
-    assert response.status_code == 502
-    assert response.json() == {"detail": "The concept dossier could not be generated."}
 
 
 def test_openapi_describes_attachment_formats_and_typed_input() -> None:

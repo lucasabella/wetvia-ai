@@ -1,5 +1,6 @@
 """Routes for downloadable dakkapel concept dossiers."""
 
+import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -7,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from wetvia.api.schemas.dossier import DakkapelDossierRequest
 from wetvia.dossier import DakkapelDossierService, DossierFormat
 from wetvia.rules import DakkapelInvoer
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/dossier", tags=["dossier"])
 
@@ -57,6 +60,7 @@ async def generate_dakkapel_dossier(
             format=format,
         )
     except Exception as exc:
+        logger.error("Concept dossier generation failed (exception_type=%s)", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The concept dossier could not be generated.",

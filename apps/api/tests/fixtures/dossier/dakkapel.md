@@ -12,7 +12,7 @@
 - Locatie: Voorbeeldstraat 4, Utrecht
 - Peildatum: 2026-11-01
 
-Plaatsen van een dakkapel aan de achterzijde\.
+Volgens de opgegeven gegevens komt een dakkapel op het achterdakvlak\. Plat dak: ja\. Dakvlak naar openbaar toegankelijk gebied: nee\. Monumentrelatie: geen beschermd monument\. Gebiedsbescherming: geen rijksbeschermd stads\- of dorpsgezicht\. Hoogte: 1\.75 m\. Afstand onderzijde tot dakvoet: 0\.75 m\. Afstand bovenzijde tot daknok: 0\.75 m\. Afstand linkerzijde tot dakvlakrand: 0\.75 m\. Afstand rechterzijde tot dakvlakrand: 0\.75 m\.
 
 ## Ingevoerde feiten
 

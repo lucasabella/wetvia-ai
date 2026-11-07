@@ -70,7 +70,7 @@ class ProjectomschrijvingV1(BaseModel):
             raise ValueError("projectomschrijving must not be blank")
         if len(cleaned.split()) > 120:
             raise ValueError("projectomschrijving may contain at most 120 words")
-        return cleaned
+        return value
 
 
 class DossierV1(BaseModel):

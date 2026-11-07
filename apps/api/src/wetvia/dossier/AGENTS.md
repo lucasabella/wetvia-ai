@@ -1,6 +1,6 @@
 # wetvia.dossier
 
-Doel: gestructureerde conceptdossiers en hun DOCX/PDF/Markdown-renderers. De service gebruikt uitsluitend de publieke API van `wetvia.rules`; alleen de korte projectomschrijving komt van de geïnjecteerde LLM-provider.
+Doel: gestructureerde conceptdossiers en hun DOCX/PDF/Markdown-renderers. De service gebruikt uitsluitend de publieke API van `wetvia.rules`; de geïnjecteerde lokale LLM-provider kopieert de deterministisch samengestelde projectomschrijving exact; afwijkingen worden afgewezen.
 
 Publieke API: `DossierV1`, placeholder-, checklist- en projectomschrijvingschema's, `DakkapelDossierService`, `DossierAttachment` en `DossierFormat` uit `__init__.py`.
 

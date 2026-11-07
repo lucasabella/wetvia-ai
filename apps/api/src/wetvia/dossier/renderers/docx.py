@@ -52,6 +52,16 @@ def _add_custom_properties(content: bytes) -> bytes:
     with ZipFile(BytesIO(content)) as source:
         files_by_name = {name: source.read(name) for name in source.namelist()}
 
+    app_ns = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+    app_properties = ET.fromstring(files_by_name["docProps/app.xml"])
+    application = app_properties.find(f"{{{app_ns}}}Application")
+    if application is None:
+        application = ET.SubElement(app_properties, f"{{{app_ns}}}Application")
+    application.text = "Wetvia-AI"
+    files_by_name["docProps/app.xml"] = ET.tostring(
+        app_properties, encoding="utf-8", xml_declaration=True
+    )
+
     content_types = ET.fromstring(files_by_name["[Content_Types].xml"])
     if not any(element.get("PartName") == "/docProps/custom.xml" for element in content_types):
         ET.SubElement(
