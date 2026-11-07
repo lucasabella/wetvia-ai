@@ -225,10 +225,153 @@ test("loading and stream error states keep visible keyboard focus and pass axe",
   await expectAxeClear(page);
 });
 
+test("history restores citations and supports rename, delete and confirmed clear", async ({
+  page,
+}) => {
+  const requestCount = await mockChat(page, "beantwoord");
+  await openApp(page);
+  const question = "Synthetic saved conversation question?";
+  await page.getByRole("textbox", { name: "Stel een vraag" }).fill(question);
+  await page.getByRole("textbox", { name: "Stel een vraag" }).press("Enter");
+  await expect(
+    page.getByText("Synthetic answer for browser testing."),
+  ).toBeVisible();
+
+  await openHistory(page);
+  const history = page.getByRole("navigation", {
+    name: "Gespreksgeschiedenis",
+  });
+  await expect(history.getByRole("heading", { name: "Vandaag" })).toBeVisible();
+  const initialConversation = history
+    .getByRole("button")
+    .filter({ hasText: question });
+  await expect(initialConversation).toBeVisible();
+  await page.getByRole("button", { name: `Hernoem ${question}` }).click();
+  const renameInput = page.getByRole("textbox", { name: "Gesprek hernoemen" });
+  await expect(renameInput).toBeFocused();
+  await renameInput.fill("Renamed synthetic conversation");
+  await page.getByRole("button", { name: "Opslaan" }).click();
+  await expect(
+    history
+      .getByRole("button")
+      .filter({ hasText: "Renamed synthetic conversation" }),
+  ).toBeVisible();
+  await expectAxeClear(page);
+
+  await page
+    .getByRole("region", { name: "Gesprekken" })
+    .getByRole("button", { name: /Nieuw gesprek/ })
+    .click();
+  await expect(
+    page.getByText(
+      "Vraag naar regels voor verbouwen. Wetvia zoekt in officiële bronnen en laat zien waar het staat.",
+    ),
+  ).toBeVisible();
+  await openHistory(page);
+  await history
+    .getByRole("button")
+    .filter({ hasText: "Renamed synthetic conversation" })
+    .click();
+  await expect(
+    page.getByText("Synthetic answer for browser testing."),
+  ).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await openApp(page);
+  expect(requestCount()).toBe(1);
+  await expect(
+    page.getByText("Synthetic answer for browser testing."),
+  ).toBeVisible();
+  await openHistory(page);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Gespreksgeschiedenis" })
+      .getByRole("button")
+      .filter({ hasText: "Renamed synthetic conversation" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Toon bron [1]" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Synthetic test source" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await openHistory(page);
+  await page
+    .getByRole("button", { name: "Verwijder Renamed synthetic conversation" })
+    .click();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Gespreksgeschiedenis" })
+      .getByText("Nog geen gesprekken."),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page
+    .getByRole("textbox", { name: "Stel een vraag" })
+    .fill("Synthetic conversation to clear?");
+  await page.getByRole("textbox", { name: "Stel een vraag" }).press("Enter");
+  await expect(
+    page.getByText("Synthetic answer for browser testing."),
+  ).toBeVisible();
+  await openHistory(page);
+  const clearButton = page.getByRole("button", { name: "Wis alle gesprekken" });
+  await clearButton.scrollIntoViewIfNeeded();
+  await clearButton.click();
+  const confirmation = page.getByRole("dialog", {
+    name: "Alle gesprekken wissen?",
+  });
+  await expect(confirmation).toBeVisible();
+  await expect(
+    confirmation.getByRole("button", { name: "Annuleren" }),
+  ).toBeFocused();
+  await expectAxeClear(page);
+  await page.getByRole("button", { name: "Annuleren" }).click();
+  await expect(confirmation).toBeHidden();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Gespreksgeschiedenis" })
+      .getByRole("button")
+      .filter({ hasText: "Synthetic conversation to clear" }),
+  ).toBeVisible();
+
+  await clearButton.click();
+  await page
+    .getByRole("dialog", { name: "Alle gesprekken wissen?" })
+    .getByRole("button", { name: "Wis alles" })
+    .click();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Gespreksgeschiedenis" })
+      .getByText("Nog geen gesprekken."),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByText(
+      "Vraag naar regels voor verbouwen. Wetvia zoekt in officiële bronnen en laat zien waar het staat.",
+    ),
+  ).toBeVisible();
+
+  await page.reload();
+  await openApp(page);
+  await expect(
+    page.getByText(
+      "Vraag naar regels voor verbouwen. Wetvia zoekt in officiële bronnen en laat zien waar het staat.",
+    ),
+  ).toBeVisible();
+  await openHistory(page);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Gespreksgeschiedenis" })
+      .getByText("Nog geen gesprekken."),
+  ).toBeVisible();
+});
+
 async function mockChat(
   page: import("@playwright/test").Page,
   status: components["schemas"]["VerifiedAnswer"]["status"],
-): Promise<void> {
+): Promise<() => number> {
   const answer: components["schemas"]["VerifiedAnswer"] = {
     status,
     samenvatting:
@@ -271,21 +414,37 @@ async function mockChat(
     .map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
     .join("");
 
-  await page.route("**/api/chat", (route) =>
-    route.fulfill({
+  let requestCount = 0;
+  await page.route("**/api/chat", (route) => {
+    requestCount += 1;
+    return route.fulfill({
       status: 200,
       headers: {
         "content-type": "text/event-stream; charset=utf-8",
         "cache-control": "no-cache",
       },
       body,
-    }),
-  );
+    });
+  });
+  return () => requestCount;
 }
 
 async function openApp(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/");
-  await page.waitForLoadState("networkidle");
+  await expect(
+    page.getByRole("form", { name: "Stel een vraag" }),
+  ).toHaveAttribute("aria-busy", "false");
+}
+
+async function openHistory(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  if (page.viewportSize()!.width < 768) {
+    await page.getByRole("button", { name: "Geschiedenis" }).click();
+  }
+  await expect(
+    page.getByRole("navigation", { name: "Gespreksgeschiedenis" }),
+  ).toBeVisible();
 }
 
 async function expectAxeClear(

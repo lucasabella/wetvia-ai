@@ -6,6 +6,8 @@
   import MenuIcon from "@lucide/svelte/icons/menu";
   import ChatPanel from "$lib/features/chat/chat-panel.svelte";
   import { ChatStore } from "$lib/features/chat/chat.svelte";
+  import { ConversationHistoryStore } from "$lib/features/chat/conversation-history.svelte";
+  import { DexieConversationRepository } from "$lib/features/chat/dexie-conversation-repository";
   import { SourcesStore } from "$lib/features/sources/sources.svelte";
   import SourcesPanel from "$lib/features/sources/sources-panel.svelte";
   import LeftColumn from "$lib/shell/left-column.svelte";
@@ -19,10 +21,18 @@
   const apiClient = createWetviaClient({
     baseUrl: env.PUBLIC_API_BASE_URL?.trim() || "",
   });
+  const history = new ConversationHistoryStore(
+    new DexieConversationRepository(),
+  );
   const chat = new ChatStore(
     (request, options) => streamChatEvents(apiClient, request, options),
     sources,
+    history,
   );
+
+  $effect(() => {
+    void chat.hydrate();
+  });
 
   function selectSource(turnId: string, chunkId: string): void {
     if (
@@ -89,7 +99,7 @@
       class="hidden flex-col gap-2 border-r border-border p-4 md:flex"
       aria-label="Zijbalk"
     >
-      <LeftColumn />
+      <LeftColumn {chat} {history} />
     </aside>
     <main id="inhoud" class="min-h-0 min-w-0 p-3 md:p-4">
       <ChatPanel {chat} onSourceSelect={selectSource} />
@@ -115,7 +125,13 @@
     <Sheet.Header>
       <Sheet.Title>Geschiedenis</Sheet.Title>
     </Sheet.Header>
-    <LeftColumn showHistoryHeading={false} idPrefix="drawer-" />
+    <LeftColumn
+      showHistoryHeading={false}
+      idPrefix="drawer-"
+      {chat}
+      {history}
+      onNavigate={() => (historyOpen = false)}
+    />
   </Sheet.Content>
 </Sheet.Root>
 

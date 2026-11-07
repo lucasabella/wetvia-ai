@@ -25,6 +25,12 @@ describe("SourcesStore", () => {
     sources.showTurn("turn-2", []);
     expect(sources.selectedChunkId).toBeNull();
     expect(sources.items).toEqual([]);
+
+    sources.showTurn("turn-3", [syntheticSource()]);
+    sources.clear();
+    expect(sources.activeTurnId).toBeNull();
+    expect(sources.selectedChunkId).toBeNull();
+    expect(sources.items).toEqual([]);
   });
 
   it("maps API source status and formats open-ended validity", () => {
