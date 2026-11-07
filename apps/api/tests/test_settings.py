@@ -95,6 +95,8 @@ def test_build_app_injects_retriever_without_loading_embedding_model(
     assert app.state.retriever is not None
     assert app.state.retriever._embedder.model_id == "intfloat/multilingual-e5-large-instruct"
     assert app.state.retriever._embedder.dimension == 1024
+    assert app.state.answer_pipeline._retriever is app.state.retriever
+    assert app.state.answer_pipeline._provider is app.state.llm
 
 
 def test_open_retriever_exposes_public_runtime_and_closes_engine(

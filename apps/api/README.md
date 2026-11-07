@@ -74,6 +74,20 @@ embedding and embedding-space validation, so lexical behavior can be measured
 without loading the embedding model. FTS and vector modes rank only their own
 candidate stream; the exact-article score boost applies only in hybrid mode.
 
+## Answer pipeline
+
+`wetvia.answer.AnswerPipeline` combines the public retriever and LLM provider
+ports. It searches hybrid mode for up to eight chunks, sends schema-constrained
+JSON at temperature `0.2`, validates the requested date, and converts only
+returned labels such as `[1]` into the corresponding retrieved chunk UUIDs.
+Empty retrieval returns a deterministic `onzeker` answer without calling the
+provider. The packaged Dutch prompt is `wetvia.answer.prompts/answer_nl.md`.
+
+Source context is limited to 8,000 budget units. Bootstrap currently injects a
+UTF-8 byte-length upper bound, which may truncate earlier than the model's real
+tokenizer; it is not reported as an exact token count. Deployments can inject a
+counter for their generator tokenizer. No chat HTTP route is wired yet.
+
 Lagen, van hoog naar laag: `bootstrap`, `api` | `cli`, `answer` | `dossier` | `documents`, `retrieval` | `ingest` | `citations` | `rules` | `llm`, `embeddings` | `db`, `core`. Elke module heeft een `AGENTS.md`.
 
 ```bash
