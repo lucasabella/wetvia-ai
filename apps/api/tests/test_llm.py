@@ -5,22 +5,53 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import httpx
+import httpx2
 import pytest
 import respx
-from openai import APIStatusError
+from openai import APIStatusError, AsyncOpenAI
 from pydantic import BaseModel, Field, ValidationError
 
 from wetvia.bootstrap import get_ollama_provider, get_provider
 from wetvia.config import Settings
 from wetvia.core import LlmProvider
 from wetvia.llm import ChatMessage, StreamMetrics
+from wetvia.llm.adapters import openai_compat
 from wetvia.llm.adapters.fake import FakeProvider
 from wetvia.llm.adapters.ollama import OllamaProvider
 from wetvia.llm.adapters.openai_compat import OpenAICompatProvider, strict_json_schema
 
 _LLM_ROOT = Path(__file__).resolve().parents[1] / "src" / "wetvia" / "llm"
+
+
+@pytest.fixture(autouse=True)
+def _mock_openai_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route SDK httpx2 requests through the existing respx assertions, without network I/O."""
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        assert request.method == "POST"
+        assert str(request.url) == "http://llm.test/v1/chat/completions"
+        forwarded = httpx.Request(
+            request.method,
+            str(request.url),
+            headers=dict(request.headers),
+            content=await request.aread(),
+        )
+        response = await respx.mock.async_handler(forwarded)
+        return httpx2.Response(
+            response.status_code,
+            headers=dict(response.headers),
+            content=await response.aread(),
+        )
+
+    def client(**kwargs: Any) -> AsyncOpenAI:
+        return AsyncOpenAI(
+            **kwargs, http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle))
+        )
+
+    monkeypatch.setattr(openai_compat, "AsyncOpenAI", client)
 
 
 class Probe(BaseModel):

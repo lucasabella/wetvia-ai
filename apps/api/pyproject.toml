@@ -28,6 +28,7 @@ wetvia = "wetvia.bootstrap:run_cli"
 [dependency-groups]
 dev = [
     "httpx>=0.27",
+    "httpx2>=2,<3",
     "import-linter>=2.15",
     "mypy>=1.13",
     "pytest>=8.3",

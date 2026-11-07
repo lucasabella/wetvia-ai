@@ -2471,6 +2471,7 @@ embeddings = [
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
+    { name = "httpx2" },
     { name = "import-linter" },
     { name = "mypy" },
     { name = "pytest" },
@@ -2497,6 +2498,7 @@ provides-extras = ["embeddings"]
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
+    { name = "httpx2", specifier = ">=2,<3" },
     { name = "import-linter", specifier = ">=2.15" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
