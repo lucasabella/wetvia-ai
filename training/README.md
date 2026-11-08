@@ -31,7 +31,7 @@ Gebruik alleen bronnen met vastgelegde herkomst en licentie. Zie [DATA_CARD.temp
 
 ## Op de pc starten
 
-Zie [LOCAL-QUICKSTART.md](LOCAL-QUICKSTART.md) voor de Windows-installatie (PowerShell en Ollama, zonder WSL), GPU-controle, preflight en de trainingsopdracht. De eerste stap op de pc is `--preflight-only`; dit controleert CUDA, bf16 en het model laden zonder een dataset of API-sleutel nodig te hebben.
+Geef een lokale agent eerst [AGENT-RUNBOOK.md](AGENT-RUNBOOK.md). Daar staan de volledige Windows-procedure, stopmomenten voor licentie- en datacontrole, de exacte commando's en het rapport dat na afloop nodig is. [LOCAL-QUICKSTART.md](LOCAL-QUICKSTART.md) is de kortere handleiding voor handmatige installatie en training.
 
 Voor echte training zijn ook nodig:
 
@@ -47,6 +47,7 @@ Deze criteria staan ook in `docs/02-ai-architectuur.md` en issues #34/#35. Zonde
 - `train_qwen35_lora.py` — bf16-LoRA voor lokaal 0.8B/2B, met datasetvalidatie, preflight en lokaal opslaan van alleen de adapter.
 - `answer_v1.py` — gedeeld AnswerV1-contract; trainer en generator valideren hiermee elke rij.
 - `generate_sft.py` — generatiepipeline (issue #34): bronfragmenten → teacher-batch of directe gesprekken → verifier → dedup → n-gram-overlap met de evalset → conceptdraft, data card en reviewsteekproef.
+- `AGENT-RUNBOOK.md` — volledige, gated handoff voor een lokale agent op Windows.
 - `DATA_CARD.template.md` — herkomst, licentie, generatie, filtering, menselijke review en beperkingen.
 - `LOCAL-QUICKSTART.md` — pc-installatie- en runstappen (Windows, PowerShell + Ollama).
 
