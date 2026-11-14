@@ -2,6 +2,8 @@
 
 *Onderzocht op 30-10-2026. Bouwt voort op [02](02-ai-architectuur.md) en [04](04-tech-stack.md). Op `main` staat sinds e90712b (PR #37) al het monorepo-skelet.*
 
+> **Koers 14 november 2026.** De monoliet hieronder blijft. De onderzoeksvraag is verschoven naar een toets en een klein bijgetraind model. Dat besluit staat in [ADR 0003](adr/0003-benchmark-en-distillatie.md) en [07](07-benchmark-en-distillatie-plan.md). Het diagram verderop beschrijft de code die er nu is, inclusief modules die leeg blijven. De pijplijn van de toets staat in docs/07.
+
 ## Besluit (TL;DR)
 
 **Geen microservices.** Wetvia wordt een **modulaire monoliet** met harde, automatisch gecontroleerde grenzen. Hij draait als **een paar processen** uit één codebase:
@@ -76,7 +78,8 @@ flowchart LR
 - **Publieke API per module:** wat in `__init__.py` staat, mag een andere module gebruiken. De rest (`_internal`, `adapters/`) niet.
 - **Data-eigenaarschap:** één schema, met tabellen per module in `db/schema/`. `ingest` schrijft `regeling/toestand/chunk`, `retrieval` leest ze alleen.
 - **`nl_wetten_ingest`** blijft een los, herbruikbaar pakket onder Apache-2.0. Het kent `wetvia` niet. Alle bron-clients (BWB, CVDR, TK, DSO) horen daar.
-- **`eval/`** is een consumer van de publieke API (`wetvia.answer`, `wetvia.retrieval`). **`training/`** valt *buiten* de uv-workspace: torch en Unsloth botsen met de API-dependencies, en workspaces delen één lockfile [7].
+- **`eval/`** is een consumer van de publieke API (`wetvia.answer`, `wetvia.retrieval`). Voor de nieuwe koers scoort `eval/` de toets en roept het de zoek-API aan voor de open-boek-rij. **`training/`** valt *buiten* de uv-workspace: torch en Unsloth botsen met de API-dependencies, en workspaces delen één lockfile [7]. De oefenstof leest een JSONL-export en importeert het toetspakket niet.
+- **`packages/nl-overheid-benchmark`** komt erbij als los pakket, in de geest van `nl-wetten-ingest`: het importeert `wetvia` niet. Code Apache-2.0, vragen CC BY 4.0. Het komt pas in het uv-workspace als het issue dat pakket aanmaakt. Tot die tijd staat het niet in het import-linter-contract. Een laag in dat contract moet als map bestaan, anders wordt CI rood.
 
 ### Grenzen afdwingen (in CI, niet op goed vertrouwen)
 
@@ -118,7 +121,7 @@ wetvia-ai/
 ├─ pyproject.toml                 # uv-workspace (al op main)
 ├─ package.json / pnpm-workspace.yaml   # + packages/api-client
 ├─ docker-compose.yml             # db; api, web, worker, ollama onder profiel
-├─ docs/{01..06}.md, docs/adr/0002-modulaire-monoliet.md
+├─ docs/{01..07}.md, docs/adr/0002-modulaire-monoliet.md, docs/adr/0003-benchmark-en-distillatie.md
 ├─ apps/
 │  ├─ api/
 │  │  ├─ pyproject.toml           # + import-linter-contracten
@@ -134,9 +137,9 @@ wetvia-ai/
 │  │  │  ├─ ingest/               # service.py (nl_wetten_ingest → db), sync
 │  │  │  ├─ embeddings/           # ports.py, adapters/sentence_transformers.py
 │  │  │  ├─ llm/                  # ports.py, adapters/{ollama,openai_compat,fake}.py
-│  │  │  ├─ rules/                # bbl_dakkapel.py (puur)
-│  │  │  ├─ dossier/              # schema.py, renderers/{docx,pdf,md}.py, templates/
-│  │  │  ├─ documents/            # v0.2: upload, redactie, Docling in subprocess
+│  │  │  ├─ rules/                # leeg; de dakkapel-toets is gestopt
+│  │  │  ├─ dossier/              # leeg; het conceptdossier is gestopt
+│  │  │  ├─ documents/            # leeg; de upload is gestopt
 │  │  │  └─ db/                   # engine, session, schema/, alembic/
 │  │  └─ tests/{unit/<module>/, integration/, e2e/}
 │  └─ web/src/lib/
@@ -145,9 +148,12 @@ wetvia-ai/
 │     └─ (api-client via @wetvia/api-client)
 ├─ packages/
 │  ├─ nl-wetten-ingest/           # Apache-2.0, kent wetvia niet (al op main)
-│  └─ api-client/                 # NIEUW: openapi.json + gegenereerde TS-types/client
+│  ├─ nl-overheid-benchmark/      # later: toets + overlapcheck, kent wetvia niet
+│  └─ api-client/                 # openapi.json + gegenereerde TS-types/client (bevroren tot er een UI is)
 ├─ eval/                          # uv-member "wetvia-eval", gebruikt alleen publieke API
 └─ training/                      # eigen pyproject/venv, BUITEN de workspace
+   ├─ generate/                   # later: oefenstof, alleen de oefen-export
+   └─ notebooks/                  # later: LoRA, geen toetsimport
 ```
 
 ## Docker Compose
@@ -170,7 +176,11 @@ wetvia-ai/
 
 ## Gevolgen voor main en de issues
 
-**Main (na PR #37, e90712b):** het skelet klopt in grote lijnen: een virtuele uv-workspace, `apps/api` en `packages/nl-wetten-ingest`, en de pnpm-workspace. Er is geen revert nodig. Eén kleine vervolg-PR (nieuw issue in M0, vóór #3) regelt de rest:
+De lijst hieronder is de oorspronkelijke vertaling van deze architectuur naar de vergunningsissues (oktober 2026). Een deel daarvan is al gemerged (#1 tot en met #5, #7 tot en met #12, #14, #38). De open rest hoort bij de oude assistent. Welke issues sluiten, bevriezen of herschrijven: de bijlage van [07](07-benchmark-en-distillatie-plan.md). Pas ze niet aan vanuit dit bestand. `rules`, `dossier` en `documents` blijven lege mappen.
+
+**Main (na PR #37, e90712b, en de merges daarna):** het skelet klopt: een virtuele uv-workspace, `apps/api`, `packages/nl-wetten-ingest` en de pnpm-workspace. De punten 1 tot en met 5 hieronder zijn uitgevoerd. Punt 6 (de TypeScript-client) wacht tot er een UI is. Er is geen revert nodig.
+
+Historische checklist, oktober 2026:
 
 1. **Lege modules erbij:** `core`, `ingest`, `embeddings`, `citations` en `documents`, plus `bootstrap.py` en `cli.py`. Pas `test_subpackages_import` daarop aan.
 2. **`import-linter` in de dev-group**, met de contracten hierboven in `apps/api/pyproject.toml`. `uv run lint-imports` komt in de CONTRIBUTING-commando's.
@@ -179,9 +189,11 @@ wetvia-ai/
 5. **`training/` buiten de workspace** houden en dat in de README vastleggen.
 6. **Package-map voor de client:** `packages/api-client` (of `packages/*`) toevoegen aan `pnpm-workspace.yaml` zodra het client-issue start.
 
-## Issues die moeten veranderen
+## Issues die moeten veranderen (historisch, oktober 2026)
 
-Elke issue-body krijgt een korte sectie **Structuur (docs/06)**:
+Dit was de vertaling naar issue-teksten vóór de koerswijziging. Voer deze lijst niet uit. De geldige lijst is de bijlage van [07](07-benchmark-en-distillatie-plan.md).
+
+Elke issue-body zou een korte sectie **Structuur (docs/06)** krijgen:
 
 - **#2 Compose:** een `worker`-service onder profiel `ingest` (zelfde image als api, `sh -c "wetvia ingest sync && wetvia embed"`), een optionele `ollama`-service onder profiel `gpu-linux`, en `LLM_BASE_URL` in plaats van een hard ingestelde Ollama-URL.
 - **#3 FastAPI-skelet:** een app-factory in `api/app.py`, routes in `api/routes/`, en `bootstrap.py` als composition root. Modules lezen nooit zelf Settings.
@@ -202,7 +214,7 @@ Elke issue-body krijgt een korte sectie **Structuur (docs/06)**:
 - **#32 Upload:** een module `documents/` achter een port, met Docling als optionele extra-dependency (eerste kandidaat om af te splitsen).
 - **#34, #35 (training):** `training/` krijgt een eigen pyproject en venv, buiten de uv-workspace.
 
-Ongewijzigd: #6 (behalve de eval-opmerking), #13, #19, #25, #26, #28, #29, #30. De needs-human-issues #13, #26 en #30 worden niet aangeraakt.
+Destijds ongewijzigd gelaten: #6 (behalve de eval-opmerking), #13, #19, #25, #26, #28, #29, #30. Ook die nummers vallen nu onder de bijlage van docs/07.
 
 ## Bronnen
 

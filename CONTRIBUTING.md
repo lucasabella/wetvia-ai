@@ -1,6 +1,8 @@
 # Bijdragen aan Wetvia
 
-Wetvia is een monorepo: `apps/api` (FastAPI, AGPL-3.0-only), `apps/web` (frontend, AGPL-3.0-only; SvelteKit volgt), `packages/nl-wetten-ingest` (Apache-2.0) en `eval/` (de evaluatieset is CC BY 4.0).
+De koers staat in [docs/07-benchmark-en-distillatie-plan.md](docs/07-benchmark-en-distillatie-plan.md). Een issue met `agent-ready` voer je uit zoals het geschreven is.
+
+Wetvia is een monorepo: `apps/api` (FastAPI, AGPL-3.0-only), `apps/web` (frontend, AGPL-3.0-only), `packages/nl-wetten-ingest` (Apache-2.0) en `eval/` (de evaluatieset is CC BY 4.0). Het toetspakket `packages/nl-overheid-benchmark` komt later: code Apache-2.0, vragen CC BY 4.0, geen import van `wetvia`.
 
 Werk op een branch vanaf `main`. Push niet rechtstreeks naar `main`; merge via een PR. Een PR die klaar is — CI groen en de acceptatiecriteria van het issue gehaald — mag gemerged worden, ook door een coding agent die zijn eigen werk mergt. Wat niet klaar is gaat terug naar de implementer.
 

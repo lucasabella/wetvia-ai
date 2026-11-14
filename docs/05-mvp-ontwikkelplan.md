@@ -1,5 +1,7 @@
 # 05. MVP-ontwikkelplan
 
+> **Koers 14 november 2026.** Deze weekplanning en de demo van 6 december 2026 zijn vervallen. Tijd (5-10 uur per week) en budget (€0-25 per maand) blijven. De nieuwe fasen, met uren en geld per fase, staan in [07](07-benchmark-en-distillatie-plan.md).
+
 ## Uitgangspunten
 
 - **Tijd:** 5-10 uur per week (Luca). Code wordt grotendeels geschreven door **Cursor cloud agents** op basis van issues met het label `agent-ready`. Luca doet: issues prioriteren, PR's reviewen, de eval-set opstellen en controleren, en de juridische inhoud checken.

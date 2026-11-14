@@ -2,6 +2,8 @@
 
 *Peildatum: 30 oktober 2026.*
 
+> **Koers 14 november 2026.** Dit stuk kiest modellen en een pijplijn voor de vergunningschat. Die chat is niet meer het doel. Modelmaten, de RTX 3070, de LoRA-geheugengetallen en de Scaleway-prijs blijven de bron voor [07](07-benchmark-en-distillatie-plan.md). De bake-off in §1.2 en de eval-set in §6 horen bij de oude assistent. Fine-tuning is niet meer "fase 3 als er tijd over is": het is het hoofdexperiment, met de scheiding en de licenties uit docs/07.
+
 ## TL;DR: de keuzes
 
 | Onderdeel | Keuze | Waarom (kort) |

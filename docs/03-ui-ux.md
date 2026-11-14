@@ -1,5 +1,7 @@
 # 03. UI/UX-ontwerp
 
+> **Koers 14 november 2026.** Deze schermen horen bij de vergunningsassistent. Die assistent stopt. Een kleine demo komt pas nadat de resultaattabel er is, en toont één vraag, de bronlink en de vier scores. Zie [07](07-benchmark-en-distillatie-plan.md), fase 8.
+
 ## Ontwerpprincipes
 
 1. **Vertrouwen boven wow.** Het moet aanvoelen als een rustige, betrouwbare overheidsdienst, niet als een glimmende AI-demo. Bronnen staan altijd in beeld.

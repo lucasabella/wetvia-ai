@@ -1,5 +1,7 @@
 # 04. Tech stack en repostructuur
 
+> **Koers 14 november 2026.** De stack (SvelteKit, FastAPI, Postgres, uv, pnpm) blijft. De vergunningschat, het dossier en de upload zijn niet meer het doel. Waar de toets, de oefenstof en de demo landen: [07](07-benchmark-en-distillatie-plan.md) en [ADR 0003](adr/0003-benchmark-en-distillatie.md). De bron-API's hieronder blijven de lijst om clients op te bouwen.
+
 ## Keuzes
 
 | Laag | Keuze | Waarom | Alternatief (afgewezen) |
@@ -46,7 +48,7 @@ wetvia-ai/
 ├─ pyproject.toml                 # uv-workspace, zonder training/
 ├─ package.json / pnpm-workspace.yaml   # + packages/api-client zodra de client er is
 ├─ docker-compose.yml             # db; api, web, worker, ollama onder profiel
-├─ docs/{01..06}.md, docs/adr/0002-modulaire-monoliet.md
+├─ docs/{01..07}.md, docs/adr/{0002,0003}.md
 ├─ apps/
 │  ├─ api/
 │  │  ├─ pyproject.toml           # import-linter-contracten
@@ -62,9 +64,9 @@ wetvia-ai/
 │  │  │  ├─ ingest/               # nl_wetten_ingest → db
 │  │  │  ├─ embeddings/           # Embedder-port
 │  │  │  ├─ llm/                  # LLMProvider-port, adapters/
-│  │  │  ├─ rules/                # regels-als-code (puur)
-│  │  │  ├─ dossier/              # renderers, templates/
-│  │  │  ├─ documents/            # v0.2: upload, redactie
+│  │  │  ├─ rules/                # leeg; vullen pas als een issue het vraagt
+│  │  │  ├─ dossier/              # leeg; vullen pas als een issue het vraagt
+│  │  │  ├─ documents/            # leeg; vullen pas als een issue het vraagt
 │  │  │  └─ db/                   # engine, schema/, alembic/
 │  │  └─ tests/
 │  └─ web/src/lib/
@@ -73,8 +75,9 @@ wetvia-ai/
 │     └─ (api-client via @wetvia/api-client)
 ├─ packages/
 │  ├─ nl-wetten-ingest/           # Apache-2.0, kent wetvia niet
-│  └─ api-client/                 # openapi.json + gegenereerde TS-client (later)
-├─ eval/                          # consumer van de publieke API
+│  ├─ nl-overheid-benchmark/      # later: toets + overlapcheck, kent wetvia niet
+│  └─ api-client/                 # openapi.json + gegenereerde TS-client (bevroren)
+├─ eval/                          # consumer van de publieke API, scoort de toets
 └─ training/                      # eigen pyproject/venv, buiten de workspace
 ```
 
@@ -150,7 +153,7 @@ gesplitst waar mogelijk, met maximaal 32 tokens overlap. De adapter herhaalt de
 artikelkop als er ruimte is en voegt de deelvectoren gewogen samen tot één
 genormaliseerde vector per chunk.
 
-> De DSO-key vervalt na een jaar zonder gebruik ([fair use](https://developer.omgevingswet.overheid.nl/services/fair-use-policy/)). Zet een ping in `drift-check.yml`.
+> De DSO-key vervalt na een jaar zonder gebruik ([fair use](https://developer.omgevingswet.overheid.nl/services/fair-use-policy/)). De wekelijkse drempelcheck uit de oude planning is gestopt; docs/07 stelt voor issue #25 te sluiten. Maak `drift-check.yml` niet aan vanuit deze alinea.
 
 ## Kosten (per maand)
 
@@ -163,3 +166,5 @@ genormaliseerde vector per chunk.
 | Domein (wetvia.nl, als het vrij is) | — | ~€1 |
 | Fine-tune runs (fase 3, eenmalig) | — | €5-15 totaal |
 | **Totaal** | **≤ €3** | **≤ €20** ✅ binnen €25 |
+
+De kosten van de toets en de LoRA staan per fase in [07](07-benchmark-en-distillatie-plan.md). Het maandbudget blijft €0-25. De leraar-run is eenmalig in de orde van €5-15, op de Scaleway-prijs uit [02](02-ai-architectuur.md), en wordt voor de run opnieuw gecontroleerd.
