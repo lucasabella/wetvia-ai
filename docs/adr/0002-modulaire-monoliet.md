@@ -1,6 +1,6 @@
 # ADR 0002: Modulaire monoliet
 
-- Status: aangenomen (2026-10-30)
+- Status: aangenomen (2026-10-30). De monoliet blijft gelden na [ADR 0003](0003-benchmark-en-distillatie.md) (2026-11-14).
 - Besluitnemer: Luca Sabella
 
 ## Context

@@ -1,59 +1,63 @@
 # Wetvia AI *(werknaam)*
 
-> Een privacyvriendelijke, lokaal te draaien AI-assistent voor Nederlandse wet- en regelgeving. Elk antwoord verwijst naar een officiële bron, en hij zegt het eerlijk als hij iets niet zeker weet.
+> Kan een klein model op je eigen computer, na oefenen op opgaven van een groot open model, een vaste toets over de Tweede Kamer en de rijksoverheid beter maken dan zonder die oefening? En komt het in de buurt van het grote model?
 
-**Status:** concept / pre-MVP (november 2026). Er is nog geen werkende code. Deze repo bevat het onderzoek, het plan en de issues voor de MVP.
+**Status:** koerswijziging (14 november 2026). Het fundament staat: BWB-ingest, embeddings, hybride zoeken, een LLM-aansluiting, CI. De toets, de oefenstof en de vergelijking moeten nog gebouwd worden. Het plan staat in [docs/07-benchmark-en-distillatie-plan.md](docs/07-benchmark-en-distillatie-plan.md).
+
+De eerdere vergunningsassistent (dakkapel, conceptdossier, burgerchat) is niet meer het doel. Die plannen blijven in docs/01 tot en met docs/05 staan als onderbouwing van het fundament.
 
 ---
 
-## Wat is Wetvia?
+## Wat deze repo meet
 
-Wetvia is een chatassistent, vergelijkbaar met ChatGPT, maar dan:
+De toets komt uit openbare stukken: [officielebekendmakingen.nl](https://www.officielebekendmakingen.nl), de [Tweede Kamer open data](https://opendata.tweedekamer.nl) en [wetten.overheid.nl](https://wetten.overheid.nl). Elke vraag wijst naar een bron. Het juiste antwoord komt uit dat document. Een groot model schrijft de oefenopgaven. Een ander model schrijft de vraagzinnen van de toets. Oefendocumenten en toetsdocumenten komen uit een andere periode.
 
-- **specifiek voor Nederlands recht en overheidsprocessen:** wetten, AMvB's, gemeentelijke regels, wetsvoorstellen en vergunningsprocedures;
-- **gebaseerd op bronnen:** elk juridisch antwoord komt uit een opgehaalde officiële tekst (wetten.overheid.nl, lokaleregelgeving.overheid.nl, officielebekendmakingen.nl, DSO/Omgevingsloket, Tweede Kamer) en citeert die met artikelnummer en geldigheidsdatum;
-- **lokaal te draaien:** het model draait op je eigen machine (Ollama / llama.cpp / MLX), zodat geüploade documenten je computer niet verlaten. Wie dat wil, kan een EU-gehoste cloudmodus aanzetten;
-- **eerlijk over onzekerheid:** zonder bron geeft Wetvia geen antwoord. Hij zegt dan dat hij het niet weet en verwijst naar de juiste instantie.
+Daarna oefent een klein model (orde 1 tot 8 miljard parameters) met een dun extra bestand, een LoRA. De tabel vergelijkt vier rijen: het kleine model zonder oefening, hetzelfde model met zoekfunctie, het grote model, en het kleine model na het oefenen. Ook de onderdelen waar het kleine model slechter is, komen in de tabel.
 
-### MVP (eerste versie)
-
-> **"Mag ik een dakkapel of uitbouw plaatsen, en wat moet ik indienen?"**
-
-Een burger beschrijft zijn plan in gewone taal. Wetvia:
-
-1. legt uit welke rijksregels gelden (Bbl, Omgevingsbesluit, Bal), met citaten en links;
-2. zegt of het plan waarschijnlijk vergunningvrij, meldingsplichtig of vergunningplichtig is, met een duidelijk voorbehoud en een link naar de officiële [Vergunningcheck](https://omgevingswet.overheid.nl/checken);
-3. maakt een **conceptdossier** (Markdown, DOCX of PDF) met projectomschrijving, checklist van indieningsvereisten, ontbrekende gegevens en bronnenlijst, klaar om in het Omgevingsloket over te nemen.
-
-Zie [docs/05-mvp-ontwikkelplan.md](docs/05-mvp-ontwikkelplan.md) voor de afbakening.
+Uitleg van die woorden, de fasen, het geld en de uren: [docs/07](docs/07-benchmark-en-distillatie-plan.md).
 
 ## Documentatie
 
 | # | Document | Inhoud |
 |---|---|---|
-| 01 | [Kritische beoordeling](docs/01-kritische-beoordeling.md) | Risico's, concurrenten, juridisch kader, wat wel en niet te doen |
-| 02 | [AI-architectuur](docs/02-ai-architectuur.md) | Modelkeuze, RAG vs fine-tuning, structured output, evaluatie |
-| 03 | [UI/UX](docs/03-ui-ux.md) | Designprincipes, schermen, kleuren, logo, toegankelijkheid |
-| 04 | [Tech stack](docs/04-tech-stack.md) | SvelteKit, FastAPI, Postgres+pgvector, serving, security, repo-structuur |
-| 05 | [MVP-ontwikkelplan](docs/05-mvp-ontwikkelplan.md) | Planning per week, latere fases, risico's, budget |
+| 07 | [Benchmark en distillatie](docs/07-benchmark-en-distillatie-plan.md) | De koers: begrippen, pijplijn, fasen, grenzen, licenties, issuevoorstel |
+| 06 | [Architectuur en structuur](docs/06-architectuur-structuur.md) | Modulaire monoliet, import-linter, waar de nieuwe onderdelen landen |
+| 04 | [Tech stack](docs/04-tech-stack.md) | SvelteKit, FastAPI, Postgres+pgvector, bron-API's |
+| 02 | [AI-architectuur](docs/02-ai-architectuur.md) | Modelmaten, zoeken, prijzen. Geschreven voor de oude assistent; de maten en de prijs blijven bruikbaar |
+| 01 | [Kritische beoordeling](docs/01-kritische-beoordeling.md) | Onderzoek van 30 oktober 2026 naar de oude assistent |
+| 03 | [UI/UX](docs/03-ui-ux.md) | Schermen van de oude assistent. De demo wacht tot de tabel er is |
+| 05 | [MVP-ontwikkelplan](docs/05-mvp-ontwikkelplan.md) | Oude weekplanning. De demo van 6 december 2026 vervalt |
 
-De issues voor de MVP staan op GitHub, met labels en milestones: [issues](https://github.com/lucasabella/wetvia-ai/issues) en [milestones](https://github.com/lucasabella/wetvia-ai/milestones). Ze zijn zo geschreven dat een coding agent (bijv. een Cursor cloud agent) ze zelfstandig kan oppakken.
+Architectuurbesluiten: [ADR 0002](docs/adr/0002-modulaire-monoliet.md) (monoliet) en [ADR 0003](docs/adr/0003-benchmark-en-distillatie.md) (deze koers).
+
+Issues: [issues](https://github.com/lucasabella/wetvia-ai/issues). Het voorstel welke open issues sluiten, bevriezen of herschrijven staat in de bijlage van docs/07. Deze README wijzigt geen issues.
 
 ## Architectuur in één oogopslag
 
 ```
-SvelteKit (UI)  ──►  FastAPI (Python)  ──►  Retrieval: Postgres + pgvector + full-text (NL)
-                          │                      ▲
-                          │                      └── Ingest: BWB (SRU), CVDR, DSO, Tweede Kamer
-                          ▼
-              LLM-provider (OpenAI-compatibel):
-              • lokaal: Ollama/llama.cpp → Qwen3.5-9B (Q4_K_M)  [RTX 3070 8 GB / M3 16 GB]
-              • cloud:  Scaleway Generative APIs → Qwen3.8-27B (EU, Parijs)
+Bronnen (BWB, Tweede Kamer, officiële bekendmakingen)
+        │
+        ▼
+nl-wetten-ingest  →  wetvia.ingest  →  Postgres
+        │                              │
+        │                              ▼
+        │                     wetvia.retrieval   (zoek-baseline)
+        ▼
+export: oefendocumenten │ toetsdocumenten
+        │                      │
+        ▼                      ▼
+training/ (leraar, LoRA)   nl-overheid-benchmark
+        │                      │
+        └──────────┬───────────┘
+                   ▼
+              eval/  →  tabel van vier rijen
 ```
+
+Het import-linter-contract in `apps/api/pyproject.toml` blijft zoals het is. Het toetspakket en `training/` zitten buiten het pakket `wetvia`. Details: [docs/06](docs/06-architectuur-structuur.md) en [docs/07](docs/07-benchmark-en-distillatie-plan.md).
 
 ## Belangrijke disclaimer
 
-Wetvia AI is **geen juridisch advies** en geen vervanging van een advocaat, jurist of de gemeente. Antwoorden kunnen fouten bevatten. Gegenereerde documenten zijn **concepten** die je zelf moet controleren. Aan de uitkomst van een vergunningcheck kun je geen rechten ontlenen. Dat geldt zelfs voor de officiële Vergunningcheck ([ABRvS 22 februari 2023, ECLI:NL:RVS:2023:736](https://uitspraken.rechtspraak.nl/details?id=ECLI:NL:RVS:2023:736)). Het bevoegd gezag (meestal de gemeente) beslist. Je praat met een AI-systeem (AI-verordening, art. 50).
+Antwoorden van een model in deze repo zijn **geen juridisch advies** en geen vervanging van een advocaat, jurist of de overheid. Een score op de toets zegt niets over een echte vergunning of een echt Kamerstuk buiten de vraag. De toets citeert alleen tekst die in een openbaar document staat.
 
 ## Licentie: **AGPL-3.0** (code), **CC BY 4.0** (docs en evaluatieset)
 
@@ -63,8 +67,7 @@ Waarom AGPL-3.0 en niet Apache-2.0:
 
 - **Het is een webapplicatie.** Onder Apache-2.0 kan iedereen Wetvia als gesloten SaaS aanbieden zonder iets terug te geven. AGPL verplicht wie een aangepaste versie via een netwerk aanbiedt om de broncode te delen. Dat past bij een project dat draait op publieke, CC0-gelicentieerde overheidsdata.
 - **Overheden en open source:** de Rijksoverheid werkt met een "open, tenzij"-beleid voor broncode, en copyleft-licenties (EUPL/AGPL) zijn in de publieke sector gangbaar. **EUPL-1.2** is een prima alternatief als je overheidsgebruik wilt stimuleren. EUPL is compatibel met AGPL en juridisch in het Nederlands beschikbaar.
-- **Portfolio:** voor werkgevers maakt de licentie niets uit. Ze kijken naar de code.
-- **Nadeel:** bedrijven gebruiken AGPL-code minder snel als bibliotheek. Daarom krijgen losse, herbruikbare pakketten (bijv. `packages/nl-wetten-ingest`) **Apache-2.0**.
+- **Nadeel:** bedrijven gebruiken AGPL-code minder snel als bibliotheek. Daarom krijgen losse, herbruikbare pakketten (bijv. `packages/nl-wetten-ingest` en straks `packages/nl-overheid-benchmark`) **Apache-2.0**. De vragen zelf blijven CC BY 4.0.
 - **Data:** overheidsbronnen zijn CC0 (BWB, CVDR, Officiële bekendmakingen, Tweede Kamer) of CC BY 4.0 (DSO, verplicht naamsvermelding: zie [Bronnen en naamsvermelding](#bronnen-en-naamsvermelding)).
 
 **Advies:** begin met AGPL-3.0. Die keuze is later nog om te zetten naar EUPL-1.2 zolang jij de enige auteur bent.
@@ -79,7 +82,7 @@ Waarom AGPL-3.0 en niet Apache-2.0:
 
 ## Bijdragen
 
-Issues met het label `agent-ready` zijn compleet gespecificeerd, met acceptatiecriteria. Lees eerst `docs/04-tech-stack.md` (repo-structuur en conventies).
+Issues met het label `agent-ready` zijn compleet gespecificeerd, met acceptatiecriteria. Lees eerst [docs/07](docs/07-benchmark-en-distillatie-plan.md) (koers) en [docs/04](docs/04-tech-stack.md) (repo-structuur en conventies). Het label op een oud vergunningsissue betekent niet dat die koers nog geldt. De bijlage van docs/07 stelt voor dat label eerst af te halen. Deze repo doet dat niet zelf.
 
 ## Skelet en tooling
 
@@ -87,7 +90,7 @@ Python 3.12 met uv (`apps/api`, `packages/nl-wetten-ingest`, `eval`) en pnpm (`a
 
 ## Modelbenchmark
 
-De bake-off uit docs/02 §1.2 (issue #6) is `eval/bench_models.py`. Hij meet via Ollama tijd tot het eerste token, tokens/s, schema-validiteit en, als `nvidia-smi` er is, piek-VRAM. De 30 eval-vragen staan nog niet in de repo. Zonder `eval/data/bench.jsonl` schrijft het script een rapport met `niet gemeten` en downloadt het geen modellen.
+`eval/bench_models.py` meet via Ollama tijd tot het eerste token, tokens/s, schema-validiteit en, als `nvidia-smi` er is, piek-VRAM. Zonder `eval/data/bench.jsonl` schrijft het script een rapport met `niet gemeten` en downloadt het geen modellen. Docs/07 stelt voor om issue #6 te herschrijven tot een hardwarecheck van het 4B-leerlingmodel. Tot die herschrijving blijft dit script een snelheidsmeting, geen kwaliteitsscore.
 
 ```bash
 ollama list

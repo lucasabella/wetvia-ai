@@ -2,6 +2,8 @@
 
 Wetvia is een modulaire monoliet, geen microservices. Het besluit en het afsplitspad staan in `docs/06-architectuur-structuur.md` en `docs/adr/0002-modulaire-monoliet.md`.
 
+De koers staat in `docs/07-benchmark-en-distillatie-plan.md` en `docs/adr/0003-benchmark-en-distillatie.md`: een toets over Kamer en rijksoverheid, en een klein model dat oefent op opgaven van een groot model. Die tekst wint van de oudere assistent-plannen in `docs/01` tot en met `docs/05` waar ze elkaar tegenspreken. `rules/`, `dossier/` en `documents/` blijven leeg tot een issue die map met naam noemt. Issues met `agent-ready` voer je uit zoals ze geschreven zijn. Een oud vergunningsissue bouw je niet om op eigen houtje.
+
 Lees de dichtstbijzijnde `AGENTS.md` in de module waar je werkt. Die wint van dit bestand voor die map.
 
 ## Commando's

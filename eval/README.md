@@ -2,6 +2,8 @@
 
 Benchmark- en eval-harness (`wetvia-eval`, AGPL-3.0-only). De vragen in `data/` zijn CC BY 4.0. Die set is nog leeg: geen bron, geen claim.
 
+De koers staat in [docs/07](../docs/07-benchmark-en-distillatie-plan.md). De toets zelf komt in `packages/nl-overheid-benchmark` (dat pakket importeert `wetvia` niet). `eval/` scoort een modelrun tegen die toets en roept voor de open-boek-rij de publieke zoek-API aan. Tot dat pakket er is, blijven de scripts hieronder een snelheidsmeting en een retrieval-runner, geen kwaliteitsscore van de nieuwe toets.
+
 `eval/bench_models.py` meet lokale Ollama-modellen (issue #6): tijd tot het eerste token, tokens/s, schema-validiteit op een dummy-`AnswerV1`, en piek-VRAM via `nvidia-smi` als dat er is. Chat loopt via de publieke `wetvia.llm`-port, aangemaakt door `wetvia.bootstrap.get_ollama_provider`; de `AnswerV1` JSON Schema wordt tijdens het streamen aan Ollama meegegeven. De volledige JSON wordt na de stream lokaal gevalideerd. Alleen het ophalen van geïnstalleerde tags gebruikt `GET /api/tags` rechtstreeks; de benchmark heeft geen eigen Ollama-chatclient.
 
 `eval/run.py retrieval` vergelijkt de publieke retriever in `fts`, `vector` en

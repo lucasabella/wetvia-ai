@@ -2,6 +2,8 @@
 
 *Peildatum: 30 oktober 2026. Bronnen staan inline gelinkt.*
 
+> **Koers 14 november 2026.** Dit stuk beoordeelt de vergunningsassistent. Die assistent is niet meer het doel. De onderzoeksvraag, de toets en de fasen staan in [07](07-benchmark-en-distillatie-plan.md). De open-databronnen hieronder blijven de basis.
+
 ## TL;DR
 
 | Vraag | Oordeel |
