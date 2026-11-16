@@ -2,6 +2,8 @@
 
 *Koers vanaf 14 november 2026. Dit document wint van de oudere productplannen in [01](01-kritische-beoordeling.md) tot en met [05](05-mvp-ontwikkelplan.md) waar ze elkaar tegenspreken. De modulaire monoliet uit [06](06-architectuur-structuur.md) blijft.*
 
+Hoe je de eerste meting op een Windows-pc met een 3070 draait, staat in [08](08-benchmark-draaien.md). Die set is nog een concept.
+
 ## De vraag
 
 Kan een klein model, dat op je eigen computer draait, een vaste toets over de Tweede Kamer en de rijksoverheid beter maken dan hetzelfde model zonder extra oefening? En komt het in de buurt van een veel groter model?

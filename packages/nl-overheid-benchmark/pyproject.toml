@@ -1,0 +1,36 @@
+[project]
+name = "nl-overheid-benchmark"
+version = "0.0.0"
+description = "Toetsitems en automatische score voor Nederlandse overheidsteksten. De code is Apache-2.0. De vragen zijn CC BY 4.0."
+readme = "README.md"
+authors = [{ name = "Luca Sabella" }]
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "nl_overheid_benchmark"
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-q"]

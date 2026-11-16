@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import sys
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -420,6 +421,11 @@ def report_path(directory: Path, when: datetime) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    incoming = list(sys.argv[1:] if argv is None else argv)
+    if incoming and (incoming[0] in {"doctor", "compare", "run"} or "--model" in incoming):
+        from wetvia_eval.kwaliteit import dispatch
+
+        return dispatch(incoming)
     parser = argparse.ArgumentParser(description="Benchmark lokale Ollama-modellen voor Wetvia.")
     parser.add_argument(
         "models",

@@ -1,0 +1,59 @@
+{
+  "@odata.context": "https://gegevensmagazijn.tweedekamer.nl/OData/v4/2.0/$metadata#Document(Id,Soort,DocumentNummer,Titel,Onderwerp,Datum,Vergaderjaar)",
+  "value": [
+    {
+      "Id": "be2aa647-441b-43fc-9c8d-000a727e0a03",
+      "Soort": "Motie (gewijzigd/nader)",
+      "DocumentNummer": "2026D58187",
+      "Titel": "Vaststelling van de begrotingsstaten van het Ministerie van Economische Zaken en Klimaat (XIII) voor het jaar 2027",
+      "Onderwerp": "Gewijzigde motie van de leden Dassen en Kathmann over voorbereidingen treffen voor de inrichting van een ministerie van Digitale Zaken (t.v.v. 37020-XIII-31)",
+      "Datum": "2026-11-16T00:00:00+01:00",
+      "Vergaderjaar": "2026-2027"
+    },
+    {
+      "Id": "8d8beb1c-88dd-4b54-94e5-001ba4105e56",
+      "Soort": "Amendement",
+      "DocumentNummer": "2026D58237",
+      "Titel": "Vaststelling van de begrotingsstaten van het Ministerie van Justitie en Veiligheid (VI) voor het jaar 2027",
+      "Onderwerp": "Amendement van het lid El Abassi over middelen voor een landelijk registratiepunt van aanvallen op islamitische instelling",
+      "Datum": "2026-11-16T00:00:00+01:00",
+      "Vergaderjaar": "2026-2027"
+    },
+    {
+      "Id": "63c98e49-ffe5-40cb-bae5-0fc3701bbb99",
+      "Soort": "Motie",
+      "DocumentNummer": "2026D58304",
+      "Titel": "Vaststelling van de begrotingsstaten van het Ministerie van Sociale Zaken en Werkgelegenheid (XV) voor het jaar 2027",
+      "Onderwerp": "Motie van het lid Keijzer c.s.",
+      "Datum": "2026-11-16T00:00:00+01:00",
+      "Vergaderjaar": "2026-2027"
+    },
+    {
+      "Id": "487a3974-a6c5-44c7-af7d-1d9ccec51d34",
+      "Soort": "Motie",
+      "DocumentNummer": "2026D58290",
+      "Titel": "Vaststelling van de begrotingsstaten van het Ministerie van Sociale Zaken en Werkgelegenheid (XV) voor het jaar 2027",
+      "Onderwerp": "Motie van het lid Nanninga",
+      "Datum": "2026-11-16T00:00:00+01:00",
+      "Vergaderjaar": "2026-2027"
+    },
+    {
+      "Id": "0afae891-2347-494f-8166-1eb9acbf73b5",
+      "Soort": "Brief commissie",
+      "DocumentNummer": "2026D57909",
+      "Titel": "Publiek-private samenwerking",
+      "Onderwerp": "Openbaarmaking van het rapport 'Publiek-private samenwerking in de landbouwsector'",
+      "Datum": "2026-11-16T00:00:00+01:00",
+      "Vergaderjaar": "2026-2027"
+    },
+    {
+      "Id": "4e2c9edd-7719-4b7a-8912-22e0e96bdfa8",
+      "Soort": "Motie",
+      "DocumentNummer": "2026D58283",
+      "Titel": "Vaststelling van de begrotingsstaten van het Ministerie van Sociale Zaken en Werkgelegenheid (XV) voor het jaar 2027",
+      "Onderwerp": "Motie van het lid Boon",
+      "Datum": "2026-11-16T00:00:00+01:00",
+      "Vergaderjaar": "2026-2027"
+    }
+  ]
+}
