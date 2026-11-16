@@ -95,7 +95,8 @@ uv run wetvia-bench compare
 
 Open `eval/reports/vergelijking.md`.
 
-- `8/28` betekent: 8 van de 28 vragen hadden het antwoord dat in de sleutel staat.
+- `8/28` betekent: 8 van de 28 vragen hadden precies het antwoord uit de sleutel. Een langere zin die het juiste nummer alleen noemt, telt niet. `Niet 1:2` is fout.
+- `onvolledig` betekent: een deel van de vragen haalde het model niet. Die rij is geen afgeronde meting. Het commando stopt dan met een foutcode.
 - `niet gemeten` betekent: die rij is niet gedraaid. Dat is geen nul.
 - **Slechter** zijn vragen die de basis goed had en het bijgetrainde model fout. Die horen in het verslag, ook als het gemiddelde meevalt.
 - **Beter** is het omgekeerde.

@@ -55,6 +55,20 @@ def test_a_quote_that_is_not_in_the_source_fails_the_citation() -> None:
     assert score.bron_goed is False
 
 
+def test_a_contradiction_that_mentions_the_key_is_wrong() -> None:
+    assert score_response(_item(), "Niet 1:2 maar 2:4").antwoord_goed is False
+    assert score_response(_item(), '{"antwoord": "Geen 1:2"}').antwoord_goed is False
+    choice = _item(
+        type="meerkeuze",
+        antwoord="2:6",
+        bron_label="2:6",
+        opties=("2:6", "2:7", "1:2", "2:4"),
+    )
+    assert score_response(choice, '{"antwoord": "Niet 2:6"}').antwoord_goed is False
+    soort = _item(type="vast_feit", antwoord="Motie", bron_label="2026D58283")
+    assert score_response(soort, '{"antwoord": "Geen motie"}').antwoord_goed is False
+
+
 def test_missing_citation_is_not_a_failure() -> None:
     score = score_response(_item(), "1:2")
     assert score.antwoord_goed is True

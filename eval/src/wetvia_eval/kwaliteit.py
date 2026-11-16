@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -50,6 +51,7 @@ class RunResult:
     toelichting: str
     concept: bool
     items: tuple[ItemResult, ...]
+    dataset_sha256: str = ""
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -58,6 +60,7 @@ class RunResult:
             "model": self.model,
             "toelichting": self.toelichting,
             "concept": self.concept,
+            "dataset_sha256": self.dataset_sha256,
             "items": [
                 {
                     "id": item.id,
@@ -116,6 +119,24 @@ def missing_base_message(tag: str) -> str:
         f"Het basismodel {tag} staat niet op het endpoint. "
         f"Bij Ollama: ollama pull {tag}. Daarna opnieuw: uv run wetvia-bench --model base"
     )
+
+
+def dataset_fingerprint(items: list[BenchItem]) -> str:
+    """Hash van vraag, sleutel en bron. Een andere set mag niet naast de oude rij."""
+    payload = [
+        {
+            "antwoord": item.antwoord,
+            "bron_label": item.bron_label,
+            "brontekst": item.brontekst,
+            "id": item.id,
+            "opties": list(item.opties),
+            "type": item.type,
+            "vraag": item.vraag,
+        }
+        for item in items
+    ]
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def run_items(
@@ -178,17 +199,25 @@ def run_items(
             continue
         scored.append(_from_score(item, score_response(item, raw), seconds))
     concept = any(item.concept for item in items)
+    status = _run_status(scored)
     return RunResult(
         rol=rol,
-        status="gemeten",
+        status=status,
         model=model,
         toelichting=_summary(scored, concept),
         concept=concept,
         items=tuple(scored),
+        dataset_sha256=dataset_fingerprint(items),
     )
 
 
-def blocked_result(rol: str, model: str, toelichting: str) -> RunResult:
+def blocked_result(
+    rol: str,
+    model: str,
+    toelichting: str,
+    *,
+    dataset_sha256: str = "",
+) -> RunResult:
     return RunResult(
         rol=rol,
         status="ontbreekt",
@@ -196,6 +225,7 @@ def blocked_result(rol: str, model: str, toelichting: str) -> RunResult:
         toelichting=toelichting,
         concept=True,
         items=(),
+        dataset_sha256=dataset_sha256,
     )
 
 
@@ -233,6 +263,7 @@ def load_run(path: Path) -> RunResult | None:
                     fout=entry.get("fout") if isinstance(entry.get("fout"), str) else None,
                 )
             )
+    fingerprint = payload.get("dataset_sha256")
     return RunResult(
         rol=str(payload.get("rol", "")),
         status=str(payload.get("status", "")),
@@ -240,6 +271,7 @@ def load_run(path: Path) -> RunResult | None:
         toelichting=str(payload.get("toelichting", "")),
         concept=bool(payload.get("concept", True)),
         items=tuple(items),
+        dataset_sha256=fingerprint if isinstance(fingerprint, str) else "",
     )
 
 
@@ -254,6 +286,17 @@ def render_comparison(base: RunResult | None, finetuned: RunResult | None) -> st
     ]
     lines.extend(_side_lines("Basis", base))
     lines.extend(_side_lines("Bijgetraind", finetuned))
+    same_set = _same_dataset(base, finetuned)
+    if base is not None and finetuned is not None and not same_set:
+        lines.extend(
+            [
+                "",
+                "De twee rijen horen niet bij dezelfde toets. "
+                "Er is geen vergelijking van beter of slechter.",
+                "",
+            ]
+        )
+        return "\n".join(lines)
     lines.extend(["", "## Per soort", "", "| Soort | Basis | Bijgetraind |", "| --- | --- | --- |"])
     kinds = sorted({item.type for item in _items(base)} | {item.type for item in _items(finetuned)})
     if not kinds:
@@ -271,7 +314,7 @@ def render_comparison(base: RunResult | None, finetuned: RunResult | None) -> st
     worse = _diffs(base, finetuned, finetuned_better=False)
     better = _diffs(base, finetuned, finetuned_better=True)
     if not _both_measured(base, finetuned):
-        lines.append("Nog niet te vergelijken: een van de twee rijen is niet gemeten.")
+        lines.append("Nog niet te vergelijken: een van de twee rijen is niet volledig gemeten.")
     elif not worse:
         lines.append("Geen vraag waar het basismodel goed zat en het bijgetrainde model fout.")
     else:
@@ -353,8 +396,14 @@ def _run(argv: list[str]) -> int:
     judge = None
     if args.model == "base":
         tag = args.base_tag
+        fingerprint = dataset_fingerprint(items)
         if not _listed(base_url, tag):
-            result = blocked_result("base", tag, missing_base_message(tag))
+            result = blocked_result(
+                "base",
+                tag,
+                missing_base_message(tag),
+                dataset_sha256=fingerprint,
+            )
             path = write_run(args.out_dir, result)
             _refresh_comparison(args.out_dir)
             print(result.toelichting)
@@ -362,11 +411,13 @@ def _run(argv: list[str]) -> int:
             return 2
     else:
         tag = args.finetuned_tag
+        fingerprint = dataset_fingerprint(items)
         if not _listed(base_url, tag):
             result = blocked_result(
                 "finetuned",
                 tag,
                 missing_finetuned_message(tag, args.finetuned_path),
+                dataset_sha256=fingerprint,
             )
             path = write_run(args.out_dir, result)
             _refresh_comparison(args.out_dir)
@@ -385,6 +436,8 @@ def _run(argv: list[str]) -> int:
     print(result.toelichting)
     print(path)
     print(comparison)
+    if result.status != "gemeten":
+        return 1
     return 0
 
 
@@ -467,13 +520,35 @@ def _from_score(item: BenchItem, score: AnswerScore, seconds: float) -> ItemResu
     )
 
 
+def _closed_items(items: list[ItemResult]) -> list[ItemResult]:
+    return [item for item in items if item.fout != "nakijker staat uit"]
+
+
+def _request_failures(items: list[ItemResult]) -> list[ItemResult]:
+    return [item for item in _closed_items(items) if item.fout is not None]
+
+
+def _run_status(items: list[ItemResult]) -> str:
+    closed = _closed_items(items)
+    failures = _request_failures(items)
+    if not closed or len(failures) == len(closed):
+        return "mislukt"
+    if failures:
+        return "onvolledig"
+    return "gemeten"
+
+
 def _summary(items: list[ItemResult], concept: bool) -> str:
-    scored = [item for item in items if item.fout is None and item.antwoord_goed is not None]
-    if not scored:
+    closed = _closed_items(items)
+    if not closed:
         return "niet gemeten: geen bruikbaar antwoord"
-    correct = sum(1 for item in scored if item.antwoord_goed)
+    correct = sum(1 for item in closed if item.antwoord_goed)
     prefix = "Conceptset. " if concept else ""
-    return f"{prefix}{correct} van {len(scored)} antwoorden komen overeen met de sleutel."
+    text = f"{prefix}{correct} van {len(closed)} antwoorden komen overeen met de sleutel."
+    failures = _request_failures(items)
+    if failures:
+        text += f" {len(failures)} verzoeken mislukt. De rij is onvolledig."
+    return text
 
 
 def _items(result: RunResult | None) -> tuple[ItemResult, ...]:
@@ -483,24 +558,32 @@ def _items(result: RunResult | None) -> tuple[ItemResult, ...]:
 
 
 def _ratio(result: RunResult | None, kind: str | None) -> str:
-    if result is None or result.status != "gemeten":
+    if result is None or result.status == "ontbreekt":
         return "niet gemeten"
     chosen = [
-        item
-        for item in result.items
-        if item.fout is None
-        and item.antwoord_goed is not None
-        and (kind is None or item.type == kind)
+        item for item in _closed_items(list(result.items)) if kind is None or item.type == kind
     ]
     if not chosen:
         return "niet gemeten"
     correct = sum(1 for item in chosen if item.antwoord_goed)
-    return f"{correct}/{len(chosen)}"
+    label = f"{correct}/{len(chosen)}"
+    if any(item.fout is not None for item in chosen):
+        return f"{label}, onvolledig"
+    return label
+
+
+def _same_dataset(base: RunResult | None, finetuned: RunResult | None) -> bool:
+    if base is None or finetuned is None:
+        return False
+    if not base.dataset_sha256 or not finetuned.dataset_sha256:
+        return False
+    return base.dataset_sha256 == finetuned.dataset_sha256
 
 
 def _both_measured(base: RunResult | None, finetuned: RunResult | None) -> bool:
     return (
-        base is not None
+        _same_dataset(base, finetuned)
+        and base is not None
         and finetuned is not None
         and base.status == "gemeten"
         and finetuned.status == "gemeten"

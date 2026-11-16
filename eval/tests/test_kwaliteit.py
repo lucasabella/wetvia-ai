@@ -88,12 +88,62 @@ def test_comparison_shows_a_missing_row_and_where_finetuned_is_worse(tmp_path: P
     assert "1/1" in text
     assert "`awb-1-2`" in text
     assert "slechter" in text
-    missing = blocked_result("finetuned", "ontbreekt", "er is nog geen model")
+    missing = blocked_result(
+        "finetuned",
+        "ontbreekt",
+        "er is nog geen model",
+        dataset_sha256=base.dataset_sha256,
+    )
     only_base = render_comparison(base, missing)
     assert "niet gemeten" in only_base
-    assert "niet te vergelijken" in only_base
+    assert "niet volledig gemeten" in only_base
     write_run(tmp_path, base)
     assert (tmp_path / "kwaliteit-base.json").is_file()
+
+
+def test_a_failed_request_is_incomplete_and_stays_in_the_denominator() -> None:
+    def complete(prompt: str) -> str:
+        if "FAIL" in prompt:
+            raise RuntimeError("timeout")
+        return '{"antwoord": "1:2"}'
+
+    failed = BenchItem(
+        id="fail",
+        type="welk_artikel",
+        vraag="FAIL",
+        antwoord="1:2",
+        citaat="een zin",
+        brontekst="Artikel 1:2\neen zin",
+        bron_url="https://wetten.overheid.nl/BWBR0005537",
+        bron_label="1:2",
+        concept=True,
+        herkomst="test",
+    )
+    result = run_items([_item(), failed], complete, rol="base", model="fake")
+    assert result.status == "onvolledig"
+    text = render_comparison(result, None)
+    assert "1/2, onvolledig" in text
+    assert "niet volledig gemeten" in text
+
+
+def test_different_question_sets_are_not_compared() -> None:
+    base = run_items([_item()], lambda _prompt: '{"antwoord": "1:2"}', rol="base", model="a")
+    other = BenchItem(
+        id="andere",
+        type="vast_feit",
+        vraag="Welk nummer?",
+        antwoord="9",
+        citaat="9",
+        brontekst="Nummer: 9",
+        bron_url="https://example.test",
+        bron_label="9",
+        concept=True,
+        herkomst="test",
+    )
+    finetuned = run_items([other], lambda _prompt: '{"antwoord": "9"}', rol="finetuned", model="b")
+    text = render_comparison(base, finetuned)
+    assert "niet bij dezelfde toets" in text
+    assert "## Waar het bijgetrainde model slechter is" not in text
 
 
 def test_lora_directory_gets_a_clear_message(tmp_path: Path) -> None:

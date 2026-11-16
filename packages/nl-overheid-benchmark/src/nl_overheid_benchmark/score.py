@@ -39,12 +39,6 @@ def _core(value: str) -> str:
     return _LABEL.sub("", normalize(value))
 
 
-def _bounded(text: str, needle: str) -> bool:
-    if not needle:
-        return False
-    return re.search(rf"(?<![\w]){re.escape(needle)}(?![\w])", text) is not None
-
-
 def extract_fields(raw: str) -> tuple[str, str | None, str | None]:
     """Haal antwoord, bron en citaat uit JSON. Lukt dat niet, dan is de hele tekst het antwoord."""
     start = raw.find("{")
@@ -67,17 +61,10 @@ def extract_fields(raw: str) -> tuple[str, str | None, str | None]:
 
 
 def answers_match(given: str, item: BenchItem) -> bool:
+    """Het hele antwoordveld moet de sleutel zijn. Een langere zin telt niet."""
     if item.type == "open":
         return False
-    left = _core(given)
-    right = _core(item.antwoord)
-    if left == right:
-        return True
-    options = tuple(_core(option) for option in item.opties)
-    if options:
-        mentioned = [option for option in options if _bounded(left, option)]
-        return mentioned == [right]
-    return _bounded(left, right) and len(left) <= len(right) + 40
+    return _core(given) == _core(item.antwoord)
 
 
 def citation_matches(item: BenchItem, bron: str | None, citaat: str | None) -> bool | None:
