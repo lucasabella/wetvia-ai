@@ -2,7 +2,11 @@
 
 Benchmark- en eval-harness (`wetvia-eval`, AGPL-3.0-only). De vragen in `data/` zijn CC BY 4.0. Die set is nog leeg: geen bron, geen claim.
 
-De koers staat in [docs/07](../docs/07-benchmark-en-distillatie-plan.md). De toets zelf komt in `packages/nl-overheid-benchmark` (dat pakket importeert `wetvia` niet). `eval/` scoort een modelrun tegen die toets en roept voor de open-boek-rij de publieke zoek-API aan. Tot dat pakket er is, blijven de scripts hieronder een snelheidsmeting en een retrieval-runner, geen kwaliteitsscore van de nieuwe toets.
+De koers staat in [docs/07](../docs/07-benchmark-en-distillatie-plan.md). De stappen op een Windows-pc staan in [docs/08](../docs/08-benchmark-draaien.md).
+
+`uv run wetvia-bench doctor` kijkt of de kaart, het endpoint en het 4B-model klaarstaan. `uv run wetvia-bench --model base` en `--model finetuned` scoren de conceptset in `packages/nl-overheid-benchmark`. `uv run wetvia-bench compare` zet de twee rijen naast elkaar. Zonder `--model` blijft `wetvia-bench` de oude snelheidsmeting. Die downloadt geen model en verzint geen cijfer.
+
+Het toetspakket importeert `wetvia` niet. `eval/` roept alleen een OpenAI-compatibel endpoint aan (Ollama of LM Studio). Er zit geen torch in deze omgeving.
 
 `eval/bench_models.py` meet lokale Ollama-modellen (issue #6): tijd tot het eerste token, tokens/s, schema-validiteit op een dummy-`AnswerV1`, en piek-VRAM via `nvidia-smi` als dat er is. Chat loopt via de publieke `wetvia.llm`-port, aangemaakt door `wetvia.bootstrap.get_ollama_provider`; de `AnswerV1` JSON Schema wordt tijdens het streamen aan Ollama meegegeven. De volledige JSON wordt na de stream lokaal gevalideerd. Alleen het ophalen van geïnstalleerde tags gebruikt `GET /api/tags` rechtstreeks; de benchmark heeft geen eigen Ollama-chatclient.
 

@@ -16,11 +16,14 @@ Daarna oefent een klein model (orde 1 tot 8 miljard parameters) met een dun extr
 
 Uitleg van die woorden, de fasen, het geld en de uren: [docs/07](docs/07-benchmark-en-distillatie-plan.md).
 
+Op een eigen pc met een NVIDIA-kaart van 8 GB: [docs/08-benchmark-draaien.md](docs/08-benchmark-draaien.md). Eerste commando, vanuit deze map: `uv run wetvia-bench doctor`. Daarna `uv run wetvia-bench --model base`.
+
 ## Documentatie
 
 | # | Document | Inhoud |
 |---|---|---|
 | 07 | [Benchmark en distillatie](docs/07-benchmark-en-distillatie-plan.md) | De koers: begrippen, pijplijn, fasen, grenzen, licenties, issuevoorstel |
+| 08 | [Benchmark draaien](docs/08-benchmark-draaien.md) | Stappen op een Windows-pc met een 3070 |
 | 06 | [Architectuur en structuur](docs/06-architectuur-structuur.md) | Modulaire monoliet, import-linter, waar de nieuwe onderdelen landen |
 | 04 | [Tech stack](docs/04-tech-stack.md) | SvelteKit, FastAPI, Postgres+pgvector, bron-API's |
 | 02 | [AI-architectuur](docs/02-ai-architectuur.md) | Modelmaten, zoeken, prijzen. Geschreven voor de oude assistent; de maten en de prijs blijven bruikbaar |

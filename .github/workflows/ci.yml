@@ -103,6 +103,37 @@ jobs:
         working-directory: packages/nl-wetten-ingest
         run: uv run pytest
 
+  nl-overheid-benchmark:
+    name: nl-overheid-benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          python-version: "3.12"
+          cache-dependency-glob: uv.lock
+
+      - name: Sync
+        run: uv sync --locked --all-packages --all-groups
+
+      - name: Ruff
+        working-directory: packages/nl-overheid-benchmark
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+
+      - name: Mypy
+        working-directory: packages/nl-overheid-benchmark
+        run: uv run mypy src
+
+      - name: Pytest
+        working-directory: packages/nl-overheid-benchmark
+        run: uv run pytest
+
   web:
     name: web
     runs-on: ubuntu-latest

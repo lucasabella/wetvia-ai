@@ -1,7 +1,9 @@
 Documentatie en evaluatieset van Wetvia AI — Creative Commons Attribution 4.0 International
 
-De bestanden in `docs/` en de evaluatieset in `eval/data/` (zodra die
-wordt gepubliceerd) zijn gelicentieerd onder de Creative Commons
+De bestanden in `docs/`, de evaluatieset in `eval/data/` (zodra die
+wordt gepubliceerd) en de conceptvragen in
+`packages/nl-overheid-benchmark/src/nl_overheid_benchmark/data/` zijn
+gelicentieerd onder de Creative Commons
 Naamsvermelding 4.0 Internationaal-licentie (CC BY 4.0).
 
 https://creativecommons.org/licenses/by/4.0/legalcode
